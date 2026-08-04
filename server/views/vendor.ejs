@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><%= vendor.name %> — Mastex Catalog</title>
+<link rel="stylesheet" href="/css/site.css">
+<style>
+  :root{ --accent:<%= theme.accent %>; --accent-2:<%= theme.accent2 %>; --accent-soft:<%= theme.accentSoft %>; }
+</style>
+<script src="/js/theme.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark"><%= initials %></div>
+      <div class="brand-text">
+        <b><%= vendor.name %></b>
+        <span>Mastex vendor catalog</span>
+      </div>
+    </div>
+    <a href="/" class="back-link">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+      All vendors
+    </a>
+    <div class="search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="searchInput" type="text" placeholder="Search <%= vendor.name %> by name, SKU or code…" autocomplete="off">
+      <span class="kbd-hint">/</span>
+    </div>
+    <div class="topbar-actions">
+      <a class="icon-btn" href="/favorites" title="All favourites">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span class="cart-badge" id="favoritesBadge">0</span>
+      </a>
+      <a class="icon-btn" href="/cart" title="Order list">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <span class="cart-badge" id="cartBadge">0</span>
+      </a>
+      <button class="icon-btn" id="themeToggle" title="Toggle theme">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="banner">
+  <div class="banner-inner">
+    <span>🔄</span>
+    <span>Product data and photos are synced automatically from the supplier's Google Sheet. The order list is real (saved in your browser).</span>
+  </div>
+</div>
+
+<div class="filterbar">
+  <div class="filter-controls">
+    <button class="fav-toggle" id="favToggle">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      <span>Favorites</span>
+    </button>
+    <label class="stock-toggle">
+      <input type="checkbox" id="inStockOnly">
+      <span class="switch"></span>
+      In stock only
+    </label>
+    <select id="sortSelect">
+      <option value="relevance">Sort: Relevance</option>
+      <option value="name-asc">Name A–Z</option>
+      <option value="price-asc">Price: Low to High</option>
+      <option value="price-desc">Price: High to Low</option>
+      <option value="stock-desc">Stock: High to Low</option>
+    </select>
+    <div class="view-toggle">
+      <button id="viewGrid" class="active" title="Grid view">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      </button>
+      <button id="viewList" title="List view">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="meta-row">
+  <span id="resultCount">Showing 0 products</span>
+  <span id="favCount"></span>
+</div>
+
+<div class="catalog">
+  <div class="grid" id="grid"></div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <h3>No products match your filters</h3>
+    <p>Try a different search term or clear your filters.</p>
+    <button id="clearFilters">Clear all filters</button>
+  </div>
+</div>
+
+<footer>
+  <span><%= vendor.name %> vendor page · <%= vendor.productCount %> SKUs · synced automatically</span>
+  <span>Source sheet: <a href="https://docs.google.com/spreadsheets/d/1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y/edit" target="_blank" rel="noopener">Price List with SOH_U — <%= vendor.name %> tab</a></span>
+</footer>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-top"><button class="modal-close" id="modalClose">✕</button></div>
+    <div class="modal-content" id="modalContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/cart.js"></script>
+<script src="/js/favorites-badge.js"></script>
+<script src="/js/product-helpers.js"></script>
+<script>
+  window.__VENDOR_SLUG__ = <%- JSON.stringify(vendor.slug) %>;
+  window.__VENDOR_NAME__ = <%- JSON.stringify(vendor.name) %>;
+  window.__PRODUCTS__ = <%- JSON.stringify(products) %>;
+</script>
+<script src="/js/catalog.js"></script>
+</body>
+</html>

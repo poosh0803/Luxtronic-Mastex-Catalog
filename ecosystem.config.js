@@ -3,21 +3,22 @@
  *
  *   pm2 start ecosystem.config.js
  *
- * - mastex-catalog-server: long-running static file server for prototype/.
- *   Vendor pages fetch() their data/*.json at runtime, so the site needs to
- *   be served over HTTP — see scripts/server.js.
- * - mastex-catalog-sync: NOT a server. Runs scripts/sync-catalog.js once a
- *   day (cron_restart) and exits (autorestart:false) until the next
- *   scheduled run. Refreshes prototype/data/*.json and prototype/assets/*
- *   from the supplier's Google Sheet. See REQUIREMENTS.md §6 for the design
- *   and open questions (deployment target, auth, vendor scope, etc.)
+ * - mastex-catalog-server: long-running Express server (server/index.js).
+ *   Renders the vendor hub and every /vendor/:slug page directly from
+ *   data/*.json — no per-vendor template, no restart needed when a vendor
+ *   is added or removed.
+ * - mastex-catalog-sync: NOT a server. Runs sync/sync-catalog.js once a day
+ *   (cron_restart) and exits (autorestart:false) until the next scheduled
+ *   run. Discovers every vendor tab in the supplier's Google Sheet and
+ *   refreshes data/*.json + data/images/*. See REQUIREMENTS.md §6 for the
+ *   design and open questions (deployment target, auth, alerting, etc.)
  *   before changing the schedule or moving this to another host.
  */
 module.exports = {
   apps: [
     {
       name: "mastex-catalog-server",
-      script: "scripts/server.js",
+      script: "server/index.js",
       cwd: __dirname,
       autorestart: true,
       watch: false,
@@ -27,7 +28,7 @@ module.exports = {
     },
     {
       name: "mastex-catalog-sync",
-      script: "scripts/sync-catalog.js",
+      script: "sync/sync-catalog.js",
       cwd: __dirname,
       autorestart: false,
       watch: false,

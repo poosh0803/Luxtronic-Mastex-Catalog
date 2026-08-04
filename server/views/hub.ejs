@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mastex Catalog — Vendors</title>
+<link rel="stylesheet" href="/css/site.css">
+<style>
+  :root{ --accent:#e8590c; --accent-2:#ff8c42; --accent-soft:#fff1e8; }
+</style>
+<script src="/js/theme.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">MX</div>
+      <div class="brand-text">
+        <b>Mastex Catalog</b>
+        <span>Vendor directory</span>
+      </div>
+    </div>
+    <div class="search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="searchInput" type="text" placeholder="Search vendors…" autocomplete="off">
+    </div>
+    <div class="topbar-actions">
+      <a class="icon-btn" href="/favorites" title="All favourites" style="width:auto; padding:0 12px; gap:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span style="font-size:13px; font-weight:600;">All Favourites</span>
+        <span class="cart-badge" id="favoritesBadge">0</span>
+      </a>
+      <a class="icon-btn" href="/cart" title="Order list">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <span class="cart-badge" id="cartBadge">0</span>
+      </a>
+      <button class="icon-btn" id="themeToggle" title="Toggle theme">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="hero">
+  <h1>All vendors</h1>
+  <p>Mastex carries <%= vendors.length %> brands in one shared supplier sheet. Each one gets its own page here — generated straight from the sheet, so a new vendor tab shows up automatically the next time the catalog syncs.</p>
+</div>
+
+<div class="banner">
+  <div class="banner-inner">
+    <span>🔄</span>
+    <span>
+      <% if (syncedAt) { %>Catalog last synced <%= new Date(syncedAt).toLocaleString() %>.<% } else { %>Catalog has not synced yet — run <code>npm run sync</code>.<% } %>
+      <% if (errors && errors.length) { %> <b><%= errors.length %> vendor(s) failed to sync</b> on the last run — check server logs.<% } %>
+    </span>
+  </div>
+</div>
+
+<div class="vendor-grid" id="vendorGrid">
+  <% vendors.forEach(function(v) { %>
+    <a class="vcard" href="/vendor/<%= v.slug %>" data-name="<%= v.name.toLowerCase() %>" style="--vcard-accent:<%= v.theme.accent %>;">
+      <svg class="vcard-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      <div class="vcard-top">
+        <div class="vmark"><%= v.initials %></div>
+        <div class="vcard-name"><%= v.name %></div>
+      </div>
+      <div class="vcard-meta"><%= v.productCount %> SKUs<% if (v.imagesMissing) { %> · <%= v.imagesMissing %> without photos<% } %></div>
+    </a>
+  <% }); %>
+</div>
+<div class="empty-state" id="emptyState" style="display:none;">
+  <h3>No vendors match your search</h3>
+</div>
+
+<footer>
+  <span>Mastex vendor directory · <%= vendors.length %> vendors synced</span>
+  <span>Source sheet: <a href="https://docs.google.com/spreadsheets/d/1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y/edit" target="_blank" rel="noopener">Price List with SOH_U</a></span>
+</footer>
+
+<script src="/js/cart.js"></script>
+<script src="/js/favorites-badge.js"></script>
+<script src="/js/hub.js"></script>
+</body>
+</html>

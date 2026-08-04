@@ -2,13 +2,15 @@
   "name": "mastex-catalog",
   "version": "1.0.0",
   "private": true,
-  "description": "Mastex vendor catalog site: static prototype site + a daily sync script that pulls fresh product data and photos from the supplier's Google Sheet.",
+  "description": "Mastex vendor catalog: an Express server that renders one page per vendor straight from synced data, plus a scheduled sync job that pulls fresh product data and photos from the supplier's Google Sheet. New vendor tabs in the sheet get a working page automatically, no code changes needed.",
   "scripts": {
-    "sync": "node scripts/sync-catalog.js",
-    "serve": "node scripts/server.js"
+    "sync": "node sync/sync-catalog.js",
+    "serve": "node server/index.js",
+    "dev": "npm run sync && npm run serve"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
+    "ejs": "^3.1.10",
     "express": "^4.21.2"
   }
 }

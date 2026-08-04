@@ -1,9 +1,15 @@
 # Mastex Catalog — Requirements & Build Plan
 
-This document captures everything requested so far for this project. It started as a
-planning-only document; **§6's automation proposal has since been implemented** (see the
-"Status" box inside §6). A future session should still read this in full before making
-further changes — it's the record of *why* things are built the way they are.
+This document is the running record of what this project is, why it's built the way it
+is, and what's still open. Read it in full before making further changes — several past
+decisions here (the image-extraction technique in particular) took real trial and error to
+land on, and the reasoning is worth not re-deriving.
+
+**Current state: a real Express server, not a prototype.** The `prototype/` folder from
+earlier in this project is retired — it was a static-HTML demo covering 3 hand-picked
+vendors and is no longer used by anything. The live app lives in `server/` + `sync/` +
+`data/` (§2) and dynamically serves **all 30 vendor tabs** in the sheet, not a curated
+subset — see §6 for how.
 
 ## 1. Background
 
@@ -13,15 +19,19 @@ Google Sheet:
 - Sheet name: `Price List with SOH_U`
 - URL: `https://docs.google.com/spreadsheets/d/1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y/edit`
 - Sharing: "Anyone with the link" (view access, no sign-in required)
-- One tab per vendor, e.g. `MCHOSE`, `HOTO`, `Moondrop`, `Keychron`, `Fantech`, `YUNZII`,
-  `Nuphy`, `Lofree`, `MAONO`, `Pulsar`, `Qwerty Keys`, `WOBKEY`, `Choetech`, `Melgeek`,
-  `IQUNIX`, `ARBITERSTUDIO`, `Gamdias`, `DarkFlash`, `FSP`, `LAMZU`, `WLMouse`, `Valkyrie`,
-  `Dry Studio / ANGRYMIAO`, `Keytok`, `Pwnage`, `VARMILO`, `HP`, `SiliconPower`, `PNY`,
-  `Unitek`, plus `New Items` / `All Items` (aggregate views) and a hidden `Promotion` tab.
+- One tab per vendor. As of this writing: `Keychron`, `Fantech`, `YUNZII`, `MCHOSE`,
+  `Nuphy`, `HOTO`, `Lofree`, `MAONO`, `Moondrop`, `Pulsar`, `Qwerty Keys`, `WOBKEY`,
+  `Choetech`, `Melgeek`, `IQUNIX`, `ARBITERSTUDIO`, `Gamdias`, `DarkFlash`, `FSP`, `LAMZU`,
+  `WLMouse`, `Valkyrie`, `Dry Studio  ANGRYMIAO`, `Keytok`, `Pwnage`, `VARMILO`, `HP`,
+  `SiliconPower`, `PNY`, `Unitek` — plus `New Items` / `All Items` (aggregate views, not a
+  single vendor's list) and a hidden `Promotion` tab. **This list is not hardcoded
+  anywhere in the app** — `sync/sync-catalog.js` discovers it fresh from the workbook every
+  run (see §6), so a vendor Mastex adds or removes shows up without a code change.
 - Each vendor tab has the same column layout: `Product Code, Description, SKU, Remark
   (NEW/EOL/blank), Image, SOH, Price (ex), RRP, Margin, EAN, Weight (g), Length (cm), Width
   (cm), Height (cm), Link`. Some tabs also have category sub-header rows (a row with only
-  column B filled in, e.g. "Precision SCREWDRIVERS") that group the rows below them.
+  column B filled in, e.g. "Precision SCREWDRIVERS") that group the rows below them; others
+  (e.g. Moondrop) have none.
 - **Product photos are pasted directly into the Image column as floating images**, not
   as cell values or `=IMAGE()` formulas. They are not retrievable via CSV/gviz export —
   see §5.2 for the extraction method that does work.
@@ -30,305 +40,224 @@ Google Sheet:
 
 ## 2. What Exists Today
 
-The site lives in [`prototype/`](prototype/) (static HTML/CSS/JS, no build step) and is
-kept fresh by the Node scripts in [`scripts/`](scripts/) — see §6 for how those fit
-together; this section is just the file-by-file inventory.
+```
+server/
+  index.js            Express app: GET /, GET /vendor/:slug, GET /cart
+  lib/vendor-theme.js  deterministic per-vendor accent color + initials + slugify
+  views/               EJS templates — hub.ejs, vendor.ejs, cart.ejs (one generic
+                       vendor.ejs renders every vendor; no per-vendor template)
+  public/
+    css/site.css        one stylesheet for every page
+    js/theme.js          shared light/dark theme (localStorage), same on every page
+    js/cart.js           shared "order list" cart (localStorage), same on every page
+    js/catalog.js        generic vendor-page behavior (search/sort/favorites/modal/cart)
+    js/hub.js            hub page search filter
+    js/cart-page.js      /cart page rendering + CSV/text export
 
-- `index.html` — vendor hub/directory. Lists all vendor tabs from the sheet; `MCHOSE`,
-  `HOTO`, and `Moondrop` are live pages, the rest are "coming soon" tiles. SKU counts and
-  the "last synced" line come from `data/meta.json` at load time.
-- `mchose.html`, `hoto.html`, `moondrop.html` — one page per vendor: search, favorites,
-  sort, grid/list view, a product detail modal, and an "Add to order" control. Product
-  data and photos are **real for all three vendors**, `fetch()`-ed from
-  `data/<vendor>.json` at load time and kept current by the daily sync (§6). No product
-  data is hardcoded in these files anymore.
-- `cart.html` — the combined "order list" page. Grouped by vendor, with quantity steppers,
-  a grand total, **Export as CSV**, **Copy as text**, and **Clear order list**.
-- `assets/cart.js` — shared cart logic, backed by `localStorage` (key `mastexCart_v1`) so
-  items added on any vendor page are visible on every other page and on `cart.html`.
-- `assets/theme.js` — shared light/dark theme state (`localStorage` key `mastexTheme_v1`),
-  applied before paint to avoid a flash, defaults to light regardless of OS preference, and
-  stays consistent across every page once toggled.
-- `assets/<vendor>/*` — product photos, written by `scripts/sync-catalog.js`.
-- `data/<vendor>.json`, `data/meta.json` — product lists + sync summary, written by
-  `scripts/sync-catalog.js`. This is generated output, not hand-maintained.
+sync/
+  sync-catalog.js     downloads the sheet, discovers every vendor tab, writes data/*
 
-There is still no real backend — no database, no auth, no order-submission endpoint. The
-"live" part is entirely the scheduled sync script rewriting static files (§6) plus the
-client-side cart in `localStorage`.
+data/                 GENERATED — gitignored, rebuild with `npm run sync`
+  meta.json            vendor list + last-sync summary; the hub and server both read
+                       this to know which vendors exist
+  <slug>.json           product list per vendor
+  images/<slug>/*        product photos per vendor
+
+ecosystem.config.js   PM2: mastex-catalog-server (always on) + mastex-catalog-sync
+                       (cron_restart, daily)
+prototype/            RETIRED. Static 3-vendor demo from before this rebuild. Nothing
+                       reads from or writes to this folder anymore — do not add to it.
+```
+
+How a request is served: `GET /vendor/:slug` reads `data/meta.json` to find that slug's
+display name + `data/<slug>.json` for its products, computes a theme color, and renders
+`views/vendor.ejs` with all of it. There is no per-vendor route, template, or file — the
+same code path serves all 30 vendors today and whatever Mastex adds tomorrow, as soon as
+the next sync writes a new `data/<slug>.json`.
+
+There is still no real backend beyond this — no database, no auth, no order-submission
+endpoint. "Live" means: the scheduled sync script rewrites `data/*` on disk, and the
+server reads that fresh on every request. The cart/order-list is entirely client-side
+(`localStorage`), shared across pages via a `cart:change` event and a common storage key.
 
 ## 3. Requirements Gathered So Far (chronological)
 
-1. Build a prototype in a `prototype/` folder: plain demo HTML, no real functionality
-   needed at first. The eventual goal is to pull the supplier's catalog from the Google
-   Sheet above and present it as a nicer reading/browsing experience than the raw sheet,
-   with a search function and other "nice to have" features.
+1. Build a prototype: plain demo HTML, no real functionality needed at first. Goal: pull
+   the supplier's catalog from the Google Sheet above and present it as a nicer
+   reading/browsing experience than the raw sheet, with search and other "nice to have"
+   features.
 2. Don't organize it as one big mixed catalog — Mastex carries many vendors, so it should
-   be **"one vendor, one page."** Each vendor page needs search and a favorites feature.
-   Investigate whether product photos can actually be pulled from the sheet. Build the
-   demo for two vendors with fewer SKUs first (chosen: **HOTO** and **Moondrop**) since
-   they're easier to build/verify than the larger vendors.
-3. Remove the category-filter chips from each vendor page — the user will just browse
-   "all products" and doesn't need to filter by category. (A small read-only category
-   label on each card is fine to keep; the interactive filter row should go.)
-4. Add a working **cart** feature: let the user add items to a cart across any vendor
-   page, then export the combined list as an **order list** to send to the Mastex
-   supplier later (CSV export + copy-as-text were the two export formats built).
-5. UI polish pass:
-   - Product images must all render at the **same size**.
-   - The cart icon and dark-mode toggle icon must sit on the **right edge** of the top
-     bar, not drift toward the middle.
-   - Dark mode must **default to light** regardless of the visitor's OS theme, and the
-     chosen theme must **stay the same across every page** (persist + apply consistently
-     site-wide, not per-page).
-6. Follow-up on image sizing: "image for each product can only be square" — every
-   product image (grid card, list row, and the detail modal) must render in a strict 1:1
-   square box.
-   - First attempt used `object-fit: cover` inside an `aspect-ratio: 1/1` box. This
-     looked right in spot checks but was **not actually square for several products**
-     (e.g. MOONDROP QUARKS, KADENZ, RAYS, HORIZON, PARA2) — measurement showed the box
-     height was tracking the source photo's own aspect ratio instead of staying square.
-     Root cause: `aspect-ratio` on a flex container whose image child uses `height:100%`
-     creates a circular sizing dependency that the browser resolves inconsistently.
-   - Fixed by switching to the classic `padding-top: 100%` box technique (a percentage
-     `padding-top` is always resolved from the element's own width, so there's no
-     circular dependency) with the `<img>` absolutely positioned inside it. Verified this
-     time by measuring actual rendered `getBoundingClientRect()` dimensions in the
-     browser, not just by eyeballing a screenshot.
-   - Follow-up correction: the user does **not** want cropping. Squares must be achieved
-     by **shrinking the photo to fit** (`object-fit: contain`, full photo always visible,
-     letterboxed inside the square with a little padding) rather than cropping
-     (`object-fit: cover`). This is the current, final state of `hoto.html` and
-     `moondrop.html`.
-7. **This document.** Write up everything requested so far into a doc a future Claude
-   session can execute from. Also: since the supplier updates the underlying Google Sheet
-   **daily**, figure out a plan to use **Node.js + PM2** to refresh the site's data on a
-   schedule, so it doesn't go stale. Explicitly told to finish this doc first and **not
-   write any code yet** — that's why this file exists and the codebase is otherwise
-   unchanged from the end of §2.
+   be **"one vendor, one page"** with search and favorites per vendor. Investigate whether
+   product photos can be pulled from the sheet. Build a demo for two smaller vendors first
+   (**HOTO** and **Moondrop**) to prove it out before doing the rest.
+3. Remove category-filter chips from each vendor page — just "all products," search is
+   enough. (A small read-only category label per card is fine to keep.)
+4. Add a working **cart**: add items across any vendor page, export the combined list as
+   an **order list** (CSV + copy-as-text) to send to Mastex later.
+5. UI polish: product images must all be the **same size**; the cart and dark-mode icons
+   must sit on the **right edge** of the top bar; dark mode must **default to light** and
+   **stay consistent across every page** once toggled.
+6. Product images must be **strictly square**, achieved by **shrinking to fit, never
+   cropping** (`object-fit: contain`, not `cover`). Getting the box itself to actually stay
+   square took two attempts — see the incident note in §6.2's predecessor work: `aspect-
+   ratio: 1/1` on a flex container whose image child has `height:100%` is unreliable
+   (confirmed by measuring rendered pixel dimensions, not just eyeballing a screenshot);
+   the fix is the classic `padding-top: 100%` box technique, which has no such dependency.
+   This is why `.card-media`/`.modal-media` in `site.css` look the way they do — don't
+   "simplify" them back to `aspect-ratio` without re-reading why.
+7. Write up everything requested into a doc for a future session (this document), and
+   look into automating the daily refresh with **Node + PM2** since the supplier updates
+   the sheet daily. Explicitly told to write the doc first and not touch code that turn.
+8. Asked, exploratory: *could this run as a Node server that regenerates HTML on a
+   schedule instead of static files + fetch?* Answered as a tradeoff (own server process
+   vs. static files), not yet a decision to act on.
+9. **The actual decision, superseding #8's static-fetch approach and #2's 3-vendor
+   scope:** run it as a real Node server; prices/stock must update automatically; and
+   critically — **when Mastex starts carrying a new vendor, the app must generate a
+   working page for it automatically**, with no manual page-building. Also: stop treating
+   this as a prototype — retire `prototype/`, don't add to or depend on anything in it
+   going forward. This is what drove the rebuild into `server/` + `sync/` + `data/`
+   described in §2, and the switch from 3 hardcoded vendor pages to all 30 discovered
+   dynamically (§6).
 
-## 4. Consolidated Frontend Spec (current target state)
+## 4. Frontend Spec (current target state)
 
-- One HTML page per vendor + one hub page + one order-list page (matches current
-  prototype structure).
+- One dynamically-rendered page per vendor (`/vendor/:slug`) + one hub (`/`) + one order
+  list (`/cart`). No per-vendor HTML file exists; `views/vendor.ejs` is the only template.
 - Every vendor page has: search box, favorites (star + "favorites only" filter), sort
   (name/price/stock), grid/list view toggle, stock badges (in stock / low / out /
   discontinued), a "NEW" tag where the sheet's Remark column says so, and a product detail
   modal.
-- No category filter chips. A small read-only category/type label on each card is fine.
+- No category filter chips. A small read-only category/type label on each card (falls
+  back to the vendor's own name if the sheet has no category sub-headers for it, e.g.
+  Moondrop).
 - Cart / order list:
   - "Add to order" control on every card and in the modal; becomes a qty stepper once an
     item is in the cart.
-  - Cart persists and is shared across every page.
-  - `cart.html` groups by vendor, shows per-vendor and grand totals, and supports CSV
-    export + copy-as-text (format: `Vendor, Product Code, SKU, Description, Qty, Unit
-    Price, Line Total`, plus a grand-total row).
-- Theme: light by default, persisted, identical on every page, toggle in the top-right of
-  the top bar.
-- Cart and theme icons pinned to the right edge of the top bar on every page.
-- Product images: strict 1:1 square, `object-fit: contain` (never cropped), consistent
-  padding, with a clean "No image in sheet" placeholder for products missing a photo.
+  - Cart persists and is shared across every page (`localStorage`, key `mastexCart_v1`).
+  - `/cart` groups by vendor, shows per-vendor and grand totals, and supports CSV export +
+    copy-as-text (`Vendor, Product Code, SKU, Description, Qty, Unit Price, Line Total`,
+    plus a grand-total row).
+- Theme: light by default, persisted (`localStorage`, key `mastexTheme_v1`), identical on
+  every page, toggle in the top-right of the top bar.
+- Cart and theme icons pinned to the right edge of the top bar on every page
+  (`.topbar-actions{margin-left:auto}` — the search box's `max-width` otherwise leaves
+  them stranded short of the actual right edge).
+- Product images: strict 1:1 square (`padding-top:100%` box, not `aspect-ratio` — see §3.6),
+  `object-fit: contain` (never cropped), with a clean "No image in sheet" placeholder for
+  products missing a photo.
+- Every vendor gets a distinct, deterministic accent color (`server/lib/vendor-theme.js`,
+  hash of the vendor name against a 15-color palette) — necessary now that colors can't be
+  hand-picked for 30+ vendors one at a time.
 
 ## 5. Data & Image Pipeline
 
 ### 5.1 Row data
 
-Each vendor's row data can be fetched without authentication via the Google Visualization
-API, keyed by sheet name (no need to know a tab's `gid`):
+Row data is parsed directly from the exported `.xlsx`'s worksheet XML (§5.2), not via the
+Google Visualization API (`gviz`) — the two initially seemed interchangeable, but `gviz`
+disagreed with the "true" row numbers in at least one sheet (a stray row shifted HOTO's
+data by one), which matters a lot once you're using row numbers to match products to
+images. Parsing the same XML for both row data and image anchors keeps them intrinsically
+aligned.
 
-```
-https://docs.google.com/spreadsheets/d/1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y/gviz/tq?tqx=out:csv&sheet=HOTO
-```
-
-This is good enough for text/number columns, but it returns nothing useful for the Image
-column (see below) and can silently disagree with the "true" row numbers in a few edge
-cases (a stray hidden row shifted HOTO's data by one row during this session — the xlsx
-route in §5.2 is the more authoritative source of truth for row alignment).
-
-### 5.2 Product images (the part that actually needs automating)
+### 5.2 Product images
 
 Google Sheets does **not** expose pasted/floating images through CSV, gviz, or the
-regular Sheets API `values.get` endpoint. The technique that worked this session:
+regular Sheets API `values.get` endpoint. The technique that works:
 
 1. Export the **entire spreadsheet** as `.xlsx`:
    `https://docs.google.com/spreadsheets/d/1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y/export?format=xlsx`
-   (this was a ~55MB download for the full 30-vendor workbook).
-2. An `.xlsx` is a zip archive. Unzip it.
-3. `xl/workbook.xml` maps each visible sheet name (e.g. `"HOTO"`) to a `sheetN.xml` file
-   via `xl/_rels/workbook.xml.rels`.
+   (~52MB for the full 30-vendor workbook — `sync/sync-catalog.js` downloads this fresh
+   every run via the global `fetch()`, which follows the redirect Google issues
+   automatically).
+2. An `.xlsx` is a zip archive — `sync-catalog.js` reads it in-memory with `adm-zip`, no
+   temp files.
+3. `xl/workbook.xml` maps each sheet's `name` + `state` (`visible`/`hidden`) to a
+   `sheetN.xml` file via `xl/_rels/workbook.xml.rels`. Vendor discovery = every `visible`
+   sheet not in the small exclusion list (`New Items`, `All Items`, `Promotion`).
 4. `xl/worksheets/_rels/sheetN.xml.rels` points to that sheet's `drawingM.xml` (if it has
-   floating images).
-5. `xl/drawings/drawingM.xml` contains one `<xdr:oneCellAnchor>` per image, each with a
-   0-indexed `<xdr:row>` (which row it's anchored to) and an `r:embed` relationship ID.
-6. `xl/drawings/_rels/drawingM.xml.rels` maps that relationship ID to the actual file in
-   `xl/media/imageNNN.png`.
-7. Cross-reference the anchor's row number against the row data from `xl/worksheets/
-   sheetN.xml` (parsed directly, not via gviz — see the row-alignment caveat above) to
-   know which product each image belongs to.
-
-This was done manually with a one-off Node script during this session (parsing the XML
-with regex, no external dependencies) for the `HOTO` and `Moondrop` tabs only, and the
-resulting PNGs were copied into `prototype/assets/hoto/` and `prototype/assets/
-moondrop/`. **This entire process needs to become the automated sync job described in
-§6** so it runs for all vendors, not just two, and reruns on a schedule instead of by
-hand.
+   floating images — some small vendor tabs have none).
+5. `xl/drawings/drawingM.xml` has one `<xdr:oneCellAnchor>` (or `twoCellAnchor`) per
+   image, each with a 0-indexed `<xdr:row>` and an `r:embed` relationship ID.
+6. `xl/drawings/_rels/drawingM.xml.rels` maps that relationship ID to the real file in
+   `xl/media/imageNNN.<ext>`.
+7. Cross-reference the anchor's row against that same sheet's row data (parsed from the
+   same worksheet XML, so row numbers can't disagree) to know which product each image
+   belongs to.
 
 Not every row has an image (color variants often share one photo, EOL rows often have
-none) — the site must keep working and show a "No image in sheet" placeholder rather than
-erroring when a product has no matching image.
+none) — `mediaHtml()` in `catalog.js` shows a "No image in sheet" placeholder rather than
+erroring when a product has no matching image. Images are only rewritten to disk when
+their content hash actually changes, so a daily sync doesn't touch hundreds of unchanged
+files.
 
-## 6. Automation: Daily Sync via Node.js + PM2
+## 6. Automation: Node Server + Daily Sync
 
-> **Status: implemented.** This section was originally a proposal; it's now the as-built
-> description. What exists:
-> - [`scripts/sync-catalog.js`](scripts/sync-catalog.js) — downloads the workbook, parses
->   `HOTO`, `Moondrop`, and `MCHOSE` (see §6.4 re: the other ~27 tabs — not yet in scope),
->   writes `prototype/data/<vendor>.json` + `prototype/data/meta.json`, and writes/updates
->   `prototype/assets/<vendor>/*` (skipping unchanged images via a content hash).
-> - [`scripts/server.js`](scripts/server.js) — a small Express static server for
->   `prototype/`, needed because the vendor pages now `fetch()` their data at runtime
->   (browsers block `fetch()` of local `file://` JSON, so the site must be served, not
->   just double-clicked open).
-> - `hoto.html`, `moondrop.html`, and `mchose.html` no longer have hardcoded product data —
->   they `fetch("data/<vendor>.json")` on load. `mchose.html` also switched from mock data
->   and icon/gradient placeholders to real synced data and real photos (was previously a
->   hand-picked 33-SKU subset; the sheet's `MCHOSE` tab actually has 111 SKUs).
-> - `index.html`'s vendor tiles pull live SKU counts and a "last synced" timestamp from
->   `data/meta.json`, so they don't go stale the way the old hardcoded "33 SKUs" text did.
-> - [`ecosystem.config.js`](ecosystem.config.js) defines two PM2 apps: `mastex-catalog-server`
->   (always on) and `mastex-catalog-sync` (`cron_restart: "0 3 * * *"`, `autorestart:
->   false` — runs once daily and exits until the next trigger). Currently running locally
->   on this dev machine via `pm2 start ecosystem.config.js` + `pm2 save`.
-> - **Not done:** surviving a machine reboot. `pm2 save` persists the process list, but
->   PM2 doesn't auto-start on boot on Windows without extra setup (e.g. the
->   `pm2-windows-startup` package, or a Task Scheduler entry running `pm2 resurrect` at
->   login). Worth doing before relying on this unattended for real, and doubly worth doing
->   before deciding this dev machine — rather than the shared LAN server — is where it
->   should permanently live (see §6.4, still open).
->
-> The rest of this section is kept as-written below for the reasoning behind these
-> choices; §6.4's open questions are still open except where noted.
+**Status: implemented and running locally.**
 
-**Goal:** the supplier edits the Google Sheet daily (prices, stock levels, new products,
-new photos). The site should pick up those changes automatically, without anyone manually
-re-running the extraction steps in §5.2.
+- `sync/sync-catalog.js` downloads the workbook, discovers every visible non-excluded
+  sheet (currently 30), and for each one writes `data/<slug>.json` (products) and
+  `data/images/<slug>/*` (photos, hash-skip on unchanged), plus one combined
+  `data/meta.json` (vendor list + counts + sync timestamp + any per-vendor errors).
+- `server/index.js` is a normal Express app, not a static file server: `GET /` and
+  `GET /vendor/:slug` render EJS templates from whatever is currently in `data/`. Adding a
+  vendor requires zero code changes — the next sync writes a new `data/<slug>.json` and
+  `/vendor/<that-slug>` starts working immediately. Verified end-to-end: `keychron`,
+  `fantech`, and every other tab that was never manually built before this rebuild render
+  correctly the same way `hoto` and `moondrop` (the two originally hand-built ones) do.
+- `ecosystem.config.js` defines two PM2 apps:
+  - `mastex-catalog-server` — always on, serves the site.
+  - `mastex-catalog-sync` — `cron_restart: "0 3 * * *"`, `autorestart: false`: runs once
+    daily and exits until the next trigger. A price/stock/photo change in the sheet is
+    live on the site by the next morning with no manual step.
+- Both are running locally on this dev machine right now (`pm2 start
+  ecosystem.config.js` + `pm2 save`).
+- **Not done: surviving a machine reboot.** `pm2 save` persists the process list, but PM2
+  doesn't auto-start on boot on Windows without extra setup (the `pm2-windows-startup`
+  package, or a Task Scheduler entry running `pm2 resurrect` at login). Worth doing before
+  relying on this unattended for real — and worth deciding first whether this dev machine,
+  or the shared LAN server the org's other PM2 services already run on
+  (`192.168.68.255`, deployed via `git pull` + `pm2 restart`), is where this should
+  permanently live.
 
-### 6.1 Shape of the change
+### 6.1 Known bug already hit and fixed here
 
-Today the prototype has product data hardcoded into a JS array inside each vendor's HTML
-file, and images committed as static PNGs. That's fine for a hand-built two-vendor demo,
-but it means "update the data" currently means "hand-edit HTML." To make daily syncing
-possible, the data needs to move **out of the HTML and into files the sync job can
-overwrite on its own**:
+Testing surfaced a real one: leftover `localStorage` cart data from testing the old
+prototype (same `localhost:4173` origin, different cart item shape — `vendor` field
+instead of `vendorSlug`/`vendorName`) silently crashed `/cart`'s render (a `.sort()`
+comparator call on `undefined.localeCompare`), leaving the page blank with no error shown
+to the user. Fixed by making `MastexCart.all()` filter out any entry that doesn't match
+the current shape, so a schema change or corrupted entry degrades gracefully instead of
+blanking the whole page. If the cart data shape changes again, keep this defensive filter
+in mind rather than assuming `localStorage` only ever contains well-formed current data.
 
-- One JSON file per vendor, e.g. `data/hoto.json`, `data/moondrop.json`, containing the
-  product array currently hardcoded in each `<script>` block.
-- Product images continue to live under `assets/<vendor>/`, written/overwritten by the
-  sync job.
-- Each vendor HTML page changes from `const PRODUCTS = [...]` to `fetch('data/hoto.json')`
-  (or similar) on load. This is a meaningful change to how the front end works and should
-  be scoped as its own step, not bundled invisibly into "add a cron job."
-- A small `data/meta.json` (or similar) recording the last successful sync time per
-  vendor, so the UI can show "Catalog last updated: <date>" somewhere (nice-to-have, not
-  strictly required, but cheap and worth doing while touching this).
+### 6.2 Open questions
 
-### 6.2 The sync script
+- **Where does this run long-term?** This dev machine, or the shared LAN server? Does
+  that server have outbound internet access to reach `docs.google.com`?
+- **Auth to the sheet:** currently relies on "anyone with the link." Fine for now; a
+  Google service account via the official Sheets API would be more robust for an
+  unattended job once this matters for real, at the cost of setup effort.
+- **Cart / order-list scope:** still fine to stay client-side (`localStorage`), or does
+  "send an order list to Mastex" eventually mean actually emailing/submitting it
+  somewhere (which would need a real backend endpoint)?
+- **Sync-failure alerting:** worth a simple notification (email/Slack/etc.) if the daily
+  sync fails, so a broken sheet structure or permissions change gets noticed quickly
+  rather than the site silently going stale? `data/meta.json.errors` already captures
+  per-vendor failures and the hub page surfaces a warning banner when `errors.length > 0`
+  — there's just no push notification on top of that yet.
+- **New Items / All Items tabs:** currently excluded as non-vendor aggregate views. Worth
+  a dedicated page later if someone wants a cross-vendor "what's new" view, but that's a
+  different data shape (spans multiple vendors) and out of scope for now.
 
-A Node.js script (e.g. `scripts/sync-catalog.js`) that, for each configured vendor:
+## 7. Suggested Next Steps
 
-1. Downloads the workbook `.xlsx` (see §5.2, step 1). Consider whether to download the
-   whole workbook once per run and process every vendor from that single download (one
-   ~55MB fetch) vs. some lighter-weight per-vendor approach — worth checking whether
-   Google exposes a way to export a single tab as xlsx to avoid the full download, but the
-   full-workbook approach is what's proven to work.
-2. Parses the workbook using the technique in §5.2 (this logic already exists as ad-hoc
-   Node code from this session and can be cleaned up and reused, rather than
-   re-researched).
-3. For each vendor tab: builds the product array (code, name, SKU, remark, stock, prices,
-   EAN, weight/dims, link, category-from-subheader-row, image filename) and writes it to
-   `data/<vendor>.json`.
-4. Extracts each product's image (if any) and writes it to `assets/<vendor>/<code>.png`,
-   skipping the copy if the image is byte-identical to what's already on disk (avoid
-   needless writes/git churn).
-5. Logs a summary (products added/removed/changed, price/stock deltas, images
-   added/removed) — useful both for debugging and as a possible future "what changed
-   today" notice.
-6. Fails loudly (non-zero exit, clear error message) if the sheet is unreachable or its
-   structure has changed in a way the parser doesn't understand (e.g. a vendor tab
-   renamed, a column reordered) — do not silently write partial/wrong data over good data.
-   Consider only overwriting `data/<vendor>.json` after fully parsing succeeds for that
-   vendor, so a mid-run failure doesn't corrupt data for vendors that already parsed fine.
-
-### 6.3 Scheduling with PM2
-
-PM2 supports running a script as a scheduled job directly (it doesn't need to be wrapped
-in a long-running server process just to get a daily cron):
-
-```
-pm2 start scripts/sync-catalog.js --name mastex-catalog-sync --cron "0 3 * * *" --no-autorestart
-```
-
-- `--cron` triggers the script on that schedule; `--no-autorestart` stops PM2 from
-  restarting it immediately after each run (it exits when done, then waits for the next
-  scheduled trigger).
-- Pick a run time with the actual supplier update cadence in mind once that's known (e.g.
-  once we know roughly when Mastex tends to edit the sheet).
-- This fits the pattern already used elsewhere for this org: other Luxtronic tools
-  (`luxtronic-portal`, `luxtronic-service-form`, `luxtronic-quotation-form`) run as PM2
-  services on a shared LAN server (`192.168.68.255`), deployed via `git pull` +
-  `pm2 restart`. Confirm with the user whether this catalog tool should join that same
-  server/deployment flow, or run somewhere else — see open questions below.
-- If the site ends up needing a real backend for other reasons (see §6.4), the sync job
-  could instead be a `node-cron` task inside that always-on server process, kept alive by
-  PM2 in the usual way, rather than a standalone `--cron` script. Which of these two
-  shapes is right depends on the backend question below.
-
-### 6.4 Open questions to resolve before implementing this
-
-- **Where does this run?** The existing LAN pm2 server, or somewhere else? Does that
-  server have outbound internet access to reach `docs.google.com`?
-- **Static site + JSON, or a real backend?** The plan above keeps things as a static
-  site (HTML/CSS/JS + JSON files) refreshed by a periodic script, which is the smallest
-  change from what exists today. If the project later wants things like per-user carts,
-  order history, multi-user auth, or write-back to the sheet, that implies a real
-  Node/Express (or similar) backend instead — worth deciding intent now rather than
-  migrating twice.
-- **Auth to the sheet:** the current approach relies on the sheet being shared "anyone
-  with the link." That's simple but fragile (one accidental permission change breaks the
-  sync silently... well, loudly, per §6.2 point 6, but still breaks). A Google service
-  account with read-only access via the official Sheets API would be more robust for an
-  unattended daily job — worth it once this moves from prototype to production.
-  need to weigh setup effort against robustness.
-- **Scope:** roll this out to all ~30 vendor tabs, or keep it to the current 3
-  (MCHOSE, HOTO, Moondrop) first and add the rest incrementally? If all 30, the vendor hub
-  page should probably generate its tiles from the sync job's output (which vendors
-  currently have data) instead of the hardcoded `LIVE_VENDORS` / `OTHER_VENDORS` lists in
-  `index.html` today.
-- ~~**MCHOSE's data is currently mock, not real.**~~ Resolved — MCHOSE is now synced from
-  the real sheet like the other two (111 SKUs, not the old hand-picked 33).
-- **Cart persistence:** still fine to stay client-side (`localStorage`) as it is today,
-  or does "send an order list to Mastex" eventually mean actually emailing/submitting it
-  somewhere, which would need a backend endpoint?
-- **Alerting on sync failure:** worth a simple notification (email/Slack/etc.) if the
-  daily sync fails, so a broken sheet structure or permissions change gets noticed quickly
-  rather than the site silently going stale?
-
-## 7. Suggested Build Order
-
-1. ~~Extract the ad-hoc xlsx/image-parsing code from this session into a clean, reusable
-   `scripts/sync-catalog.js`.~~ **Done.**
-2. ~~Move each vendor's hardcoded `PRODUCTS` array out into `data/<vendor>.json`, and
-   change each vendor page to `fetch()` it instead.~~ **Done**, for all three vendors.
-3. ~~Point the sync script at HOTO/Moondrop/MCHOSE, replace MCHOSE's mock data with real
-   sheet data, add a "Catalog last synced" indicator.~~ **Done.**
-4. ~~Wire up the PM2 scheduled job and confirm a full end-to-end run updates the live
-   site.~~ **Done** — running locally on this dev machine (see §6's status box for what
-   that does and doesn't cover).
-5. **Not done / next up:**
-   - Resolve the open questions in §6.4 (deployment target, static-vs-backend for the
-     long run, sheet auth, whether to expand past 3 vendors, cart/order-submission scope).
-   - PM2-survives-reboot setup if this dev machine is where it's meant to keep running.
-   - Sync-failure alerting and a diff/changelog log from §6.2 (nice-to-have, not required
-     for the daily refresh to work).
-   - Generate the vendor hub's "coming soon" tile list from sync output instead of the
-     hardcoded `OTHER_VENDORS` array in `index.html`, if/when more vendors are added.
+1. Decide the deployment question in §6.2 (this dev machine vs. the shared LAN server) and
+   set up PM2 boot persistence accordingly.
+2. Sync-failure alerting (§6.2) if the answer to "how would we notice a broken sync" needs
+   to be better than "someone happens to check the hub page's warning banner."
+3. Decide the cart/order-submission scope (§6.2) if "send to Mastex" needs to become more
+   than an exported file.
+4. If sheet auth ever becomes a real concern, move from "anyone with the link" to a Google
+   service account (§6.2).

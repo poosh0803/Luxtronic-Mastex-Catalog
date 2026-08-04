@@ -2,15 +2,21 @@
 /**
  * Mastex catalog sync.
  *
- * Downloads the supplier's Google Sheet as .xlsx, parses the configured vendor
- * tabs (row data + the images pasted into the Image column), and writes:
- *   - data/<vendor>.json   product list per vendor, consumed by <vendor>.html
- *   - data/meta.json       last-sync summary, consumed by the site for a
- *                          "catalog last updated" indicator
- *   - assets/<vendor>/*    product photos (only rewritten when changed)
+ * Downloads the supplier's Google Sheet as .xlsx, discovers every vendor tab
+ * (any visible sheet that isn't one of the known non-vendor aggregate/hidden
+ * tabs), and parses each one's row data + the images pasted into its Image
+ * column. Writes, per vendor:
+ *   - data/<slug>.json          product list, read by the server per request
+ *   - data/images/<slug>/*      product photos (only rewritten when changed)
+ * and one combined:
+ *   - data/meta.json            vendor list + last-sync summary — this is
+ *                                what the server reads to know which vendor
+ *                                pages exist, so a vendor Mastex adds to the
+ *                                sheet tomorrow gets a working page the next
+ *                                time this script runs, with no code changes.
  *
- * Run manually with `npm run sync`, or on a schedule via PM2 (see
- * ecosystem.config.js). See REQUIREMENTS.md §5.2 for how/why the image
+ * Run manually with `npm run sync`, or on a schedule via PM2
+ * (see ecosystem.config.js). See REQUIREMENTS.md §5.2 for why the image
  * extraction works the way it does.
  */
 
@@ -23,15 +29,11 @@ const SHEET_ID = "1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y";
 const WORKBOOK_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx`;
 
 const ROOT = path.join(__dirname, "..");
-const DATA_DIR = path.join(ROOT, "prototype", "data");
-const ASSETS_DIR = path.join(ROOT, "prototype", "assets");
+const DATA_DIR = path.join(ROOT, "data");
+const IMAGES_DIR = path.join(DATA_DIR, "images");
 
-// Which vendor tabs to sync, and what slug/output-folder each maps to.
-const VENDORS = [
-  { sheetName: "HOTO", slug: "hoto" },
-  { sheetName: "Moondrop", slug: "moondrop" },
-  { sheetName: "MCHOSE", slug: "mchose" },
-];
+// Sheet tabs that exist but aren't a vendor's own product list.
+const EXCLUDED_SHEETS = new Set(["New Items", "All Items", "Promotion"]);
 
 // Column layout shared by every vendor tab in the sheet.
 const COLUMNS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"];
@@ -39,6 +41,17 @@ const FIELDS = [
   "code", "desc", "sku", "remark", "imgCell", "soh", "priceEx", "rrp",
   "margin", "ean", "weight", "length", "width", "height", "link",
 ];
+
+// ---------------------------------------------------------------------------
+// Slug helper
+// ---------------------------------------------------------------------------
+
+function slugify(name) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "vendor";
+}
 
 // ---------------------------------------------------------------------------
 // XML helpers (no XML parser dependency — the sheet's XML is simple enough
@@ -68,12 +81,10 @@ function readEntryBuffer(zip, entryPath) {
 }
 
 function resolveRelative(baseDir, target) {
-  // baseDir like "xl/worksheets", target like "../drawings/drawing8.xml"
   return path.posix.normalize(path.posix.join(baseDir, target));
 }
 
 function parseRelationships(xml) {
-  // Returns { rId: target }
   const map = {};
   const re = /<Relationship\s+Id="(rId\d+)"[^>]*Target="([^"]+)"/g;
   let m;
@@ -94,27 +105,33 @@ function parseSharedStrings(zip) {
   return strings;
 }
 
-function parseSheetMap(zip) {
-  // sheet name -> { sheetPath }
+/** Returns [{ name, sheetPath }] for every vendor tab (visible, not excluded). */
+function discoverVendorSheets(zip) {
   const workbookXml = readEntryText(zip, "xl/workbook.xml");
   const relsXml = readEntryText(zip, "xl/_rels/workbook.xml.rels");
   if (!workbookXml || !relsXml) throw new Error("workbook.xml or its rels file is missing from the exported .xlsx");
 
   const rels = parseRelationships(relsXml);
-  const map = {};
+  const vendors = [];
   const sheetRe = /<sheet\b[^>]*\/>/g;
   let m;
   while ((m = sheetRe.exec(workbookXml))) {
     const tag = m[0];
     const nameMatch = tag.match(/name="([^"]*)"/);
     const ridMatch = tag.match(/r:id="(rId\d+)"/);
+    const stateMatch = tag.match(/state="([^"]*)"/);
     if (!nameMatch || !ridMatch) continue;
+
     const name = decodeXmlEntities(nameMatch[1]);
+    const state = stateMatch ? stateMatch[1] : "visible";
+    if (state !== "visible") continue;
+    if (EXCLUDED_SHEETS.has(name)) continue;
+
     const target = rels[ridMatch[1]];
     if (!target) continue;
-    map[name] = { sheetPath: resolveRelative("xl", target) };
+    vendors.push({ name, slug: slugify(name), sheetPath: resolveRelative("xl", target) });
   }
-  return map;
+  return vendors;
 }
 
 function parseRows(zip, sheetPath, sharedStrings) {
@@ -150,7 +167,6 @@ function parseRows(zip, sheetPath, sharedStrings) {
 }
 
 function parseSheetImages(zip, sheetPath) {
-  // Returns Map(rowNum1Indexed -> media zip path), or empty map if the sheet has no drawing.
   const sheetFile = path.posix.basename(sheetPath);
   const sheetRelsPath = resolveRelative(path.posix.dirname(sheetPath), `_rels/${sheetFile}.rels`);
   const sheetRelsXml = readEntryText(zip, sheetRelsPath);
@@ -215,17 +231,9 @@ function formatDims(length, width, height) {
 // Per-vendor extraction
 // ---------------------------------------------------------------------------
 
-function extractVendor(zip, sheetMap, sharedStrings, vendor) {
-  const sheetInfo = sheetMap[vendor.sheetName];
-  if (!sheetInfo) {
-    throw new Error(
-      `Tab "${vendor.sheetName}" was not found in the workbook. Vendor tabs may have been ` +
-      `renamed — check the sheet and update VENDORS in scripts/sync-catalog.js.`
-    );
-  }
-
-  const rows = parseRows(zip, sheetInfo.sheetPath, sharedStrings);
-  const images = parseSheetImages(zip, sheetInfo.sheetPath);
+function extractVendorProducts(zip, sharedStrings, vendor) {
+  const rows = parseRows(zip, vendor.sheetPath, sharedStrings);
+  const images = parseSheetImages(zip, vendor.sheetPath);
 
   const rowNums = Object.keys(rows).map(Number).sort((a, b) => a - b);
   const maxRow = rowNums.length ? rowNums[rowNums.length - 1] : 1;
@@ -241,8 +249,7 @@ function extractVendor(zip, sheetMap, sharedStrings, vendor) {
     const desc = row.B;
 
     if (!code && desc) {
-      // A category sub-header row (blank Product Code, text in Description).
-      currentCategory = desc.trim();
+      currentCategory = desc.trim(); // category sub-header row
       continue;
     }
     if (!code) continue; // fully blank row
@@ -268,7 +275,7 @@ function extractVendor(zip, sheetMap, sharedStrings, vendor) {
       weight: raw.weight ? `${toNumber(raw.weight)} g` : "",
       dims: formatDims(raw.length, raw.width, raw.height),
       link: (raw.link || "").trim(),
-      _imageZipPath: imagePath, // resolved to a real filename + written to disk below; not part of the public JSON
+      _imageZipPath: imagePath,
     });
   }
 
@@ -276,7 +283,7 @@ function extractVendor(zip, sheetMap, sharedStrings, vendor) {
 }
 
 function writeVendorImages(zip, vendor, products) {
-  const outDir = path.join(ASSETS_DIR, vendor.slug);
+  const outDir = path.join(IMAGES_DIR, vendor.slug);
   fs.mkdirSync(outDir, { recursive: true });
 
   let written = 0;
@@ -338,48 +345,50 @@ async function downloadWorkbook() {
 async function main() {
   const startedAt = new Date();
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(ASSETS_DIR, { recursive: true });
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
   const workbookBuf = await downloadWorkbook();
   const zip = new AdmZip(workbookBuf);
 
-  console.log("Parsing shared strings and sheet map...");
+  console.log("Parsing shared strings and discovering vendor tabs...");
   const sharedStrings = parseSharedStrings(zip);
-  const sheetMap = parseSheetMap(zip);
+  const vendors = discoverVendorSheets(zip);
+  console.log(`Found ${vendors.length} vendor tabs: ${vendors.map((v) => v.name).join(", ")}`);
 
-  const meta = { syncedAt: startedAt.toISOString(), vendors: {}, errors: [] };
+  const meta = { syncedAt: startedAt.toISOString(), vendors: [], errors: [] };
 
-  for (const vendor of VENDORS) {
-    console.log(`\n--- ${vendor.sheetName} (data/${vendor.slug}.json) ---`);
+  for (const vendor of vendors) {
+    process.stdout.write(`\n--- ${vendor.name} (${vendor.slug}) --- `);
     try {
-      const products = extractVendor(zip, sheetMap, sharedStrings, vendor);
+      const products = extractVendorProducts(zip, sharedStrings, vendor);
       const imgStats = writeVendorImages(zip, vendor, products);
 
       const outPath = path.join(DATA_DIR, `${vendor.slug}.json`);
       fs.writeFileSync(outPath, JSON.stringify(products, null, 2));
 
       console.log(
-        `${products.length} products. Images: ${imgStats.written} written, ` +
-        `${imgStats.unchanged} unchanged, ${imgStats.missing} missing.`
+        `${products.length} products, images: ${imgStats.written} written / ` +
+        `${imgStats.unchanged} unchanged / ${imgStats.missing} missing`
       );
 
-      meta.vendors[vendor.slug] = {
-        sheetName: vendor.sheetName,
+      meta.vendors.push({
+        name: vendor.name,
+        slug: vendor.slug,
         productCount: products.length,
         imagesWritten: imgStats.written,
         imagesMissing: imgStats.missing,
-        syncedAt: startedAt.toISOString(),
-      };
+      });
     } catch (err) {
-      console.error(`FAILED to sync ${vendor.sheetName}: ${err.message}`);
-      meta.errors.push({ vendor: vendor.slug, message: err.message });
+      console.log(`FAILED: ${err.message}`);
+      meta.errors.push({ vendor: vendor.slug, name: vendor.name, message: err.message });
     }
   }
 
+  meta.vendors.sort((a, b) => a.name.localeCompare(b.name));
   fs.writeFileSync(path.join(DATA_DIR, "meta.json"), JSON.stringify(meta, null, 2));
 
   const durationSec = ((Date.now() - startedAt.getTime()) / 1000).toFixed(1);
-  console.log(`\nDone in ${durationSec}s.`);
+  console.log(`\nSynced ${meta.vendors.length} vendors in ${durationSec}s.`);
 
   if (meta.errors.length > 0) {
     console.error(`${meta.errors.length} vendor(s) failed to sync — see above.`);
