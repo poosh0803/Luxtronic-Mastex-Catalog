@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order List — Mastex Catalog</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f1f4; --border:#e3e5ea;
+    --text:#1a1d24; --text-dim:#6b7280;
+    --accent:#e8590c; --accent-2:#ff8c42; --accent-soft:#fff1e8;
+    --good:#1a8a4a; --good-bg:#e7f7ee;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(20,20,30,.04), 0 4px 16px rgba(20,20,30,.05);
+    --shadow-lg:0 10px 40px rgba(20,20,30,.16);
+    font-size:16px;
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161b; --surface:#1c1f26; --surface-2:#242832; --border:#2e323c;
+    --text:#eceef2; --text-dim:#9aa0ac; --accent:#ff8c42; --accent-2:#ffab6b; --accent-soft:#3a2416;
+    --good:#3ddc84; --good-bg:#12301f;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.35);
+    --shadow-lg:0 10px 40px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  a{color:inherit;}
+  ::selection{background:var(--accent-soft);color:var(--accent);}
+
+  .topbar{position:sticky; top:0; z-index:30; background:var(--surface); border-bottom:1px solid var(--border); backdrop-filter:blur(8px);}
+  .topbar-inner{max-width:960px; margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:14px;}
+  .brand{display:flex; align-items:center; gap:10px; white-space:nowrap;}
+  .brand-mark{
+    width:34px;height:34px;border-radius:9px; background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    display:flex;align-items:center;justify-content:center; color:#fff; font-weight:800; font-size:15px; letter-spacing:-.5px; box-shadow:var(--shadow);
+  }
+  .brand-text{display:flex;flex-direction:column;line-height:1.1;}
+  .brand-text b{font-size:15px;letter-spacing:.2px;}
+  .brand-text span{font-size:11.5px;color:var(--text-dim);}
+  .back-link{
+    margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:0 12px; height:36px; border-radius:9px;
+    border:1px solid var(--border); text-decoration:none; font-size:13px; font-weight:600; color:var(--text); background:var(--surface);
+  }
+  .back-link:hover{border-color:var(--accent); color:var(--accent);}
+  .icon-btn{
+    width:36px;height:36px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--text);
+    cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s, transform .1s; flex-shrink:0;
+  }
+  .icon-btn:hover{background:var(--surface-2);}
+  .icon-btn:active{transform:scale(.94);}
+
+  .hero{max-width:960px; margin:0 auto; padding:36px 24px 4px;}
+  .hero h1{font-size:26px; margin:0 0 6px; letter-spacing:-.3px;}
+  .hero p{color:var(--text-dim); font-size:14px; margin:0; max-width:640px; line-height:1.5;}
+
+  .banner{max-width:960px; margin:16px auto 0; padding:0 24px;}
+  .banner-inner{background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); color:var(--text); border-radius:10px; padding:9px 14px; font-size:12.5px; display:flex; align-items:center; gap:8px;}
+  .banner-inner b{color:var(--accent);}
+
+  .wrap{max-width:960px; margin:0 auto; padding:24px 24px 60px;}
+
+  .empty-state{text-align:center; padding:90px 20px; color:var(--text-dim);}
+  .empty-state svg{opacity:.35; margin-bottom:16px;}
+  .empty-state h3{color:var(--text); margin:0 0 8px; font-size:18px;}
+  .empty-state a{
+    display:inline-flex; margin-top:16px; padding:9px 18px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--accent); font-weight:700; font-size:13.5px; text-decoration:none;
+  }
+
+  .vendor-group{margin-bottom:26px;}
+  .vendor-head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .vendor-dot{width:10px;height:10px;border-radius:50%; flex-shrink:0;}
+  .vendor-head h2{font-size:14px; font-weight:700; margin:0; letter-spacing:.2px;}
+  .vendor-subtotal{margin-left:auto; font-size:12.5px; color:var(--text-dim);}
+
+  .item-row{
+    display:flex; align-items:center; gap:14px; padding:12px 14px; background:var(--surface);
+    border:1px solid var(--border); border-radius:11px; margin-bottom:8px;
+  }
+  .item-info{flex:1; min-width:0;}
+  .item-name{font-size:13.5px; font-weight:600; line-height:1.35; margin-bottom:2px;}
+  .item-sku{font-size:11.5px; color:var(--text-dim); font-family:ui-monospace,SFMono-Regular,Consolas,monospace;}
+  .item-price{font-size:13px; color:var(--text-dim); width:70px; text-align:right; flex-shrink:0;}
+  .qty-stepper{display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0;}
+  .qty-btn{width:28px;height:28px; border:none; background:var(--surface-2); color:var(--text); font-size:15px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center;}
+  .qty-btn:hover{background:var(--accent); color:#fff;}
+  .qty-val{width:32px; text-align:center; font-size:13px; font-weight:700;}
+  .item-total{font-size:13.5px; font-weight:800; width:74px; text-align:right; flex-shrink:0;}
+  .item-remove{
+    width:28px;height:28px; border-radius:8px; border:none; background:transparent; color:var(--text-dim);
+    cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .item-remove:hover{background:var(--bad-bg,#fbe9e7); color:var(--bad,#c0392b);}
+
+  .summary{
+    position:sticky; bottom:0; background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:18px 20px; margin-top:20px; box-shadow:var(--shadow-lg);
+  }
+  .summary-row{display:flex; justify-content:space-between; align-items:center; font-size:13.5px; color:var(--text-dim); margin-bottom:6px;}
+  .summary-row.total{font-size:19px; font-weight:800; color:var(--text); margin-bottom:14px;}
+  .summary-actions{display:flex; gap:10px; flex-wrap:wrap;}
+  .btn-primary{
+    background:var(--accent); color:#fff; border:none; padding:11px 18px; border-radius:9px;
+    font-weight:700; font-size:13.5px; cursor:pointer; display:inline-flex; align-items:center; gap:7px;
+  }
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-secondary{
+    background:var(--surface-2); color:var(--text); border:1px solid var(--border); padding:11px 16px;
+    border-radius:9px; font-weight:600; font-size:13.5px; cursor:pointer; display:inline-flex; align-items:center; gap:7px;
+  }
+  .btn-secondary:hover{border-color:var(--accent); color:var(--accent);}
+  .btn-danger{color:#c0392b;}
+
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--text); color:var(--bg);
+    padding:10px 18px; border-radius:10px; font-size:13.5px; opacity:0; pointer-events:none; transition:all .25s; z-index:200; box-shadow:var(--shadow-lg);
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  @media (max-width:560px){
+    .item-price{display:none;}
+  }
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">MX</div>
+      <div class="brand-text">
+        <b>Order List</b>
+        <span>For Mastex</span>
+      </div>
+    </div>
+    <a href="index.html" class="back-link">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+      All vendors
+    </a>
+    <button class="icon-btn" id="themeToggle" title="Toggle theme">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="hero">
+  <h1>Your order list</h1>
+  <p>Items you've added across any vendor page, combined into one list. Adjust quantities below, then export it as a CSV or copy it as plain text to send to Mastex.</p>
+</div>
+
+<div class="banner">
+  <div class="banner-inner">
+    <span>🧪</span>
+    <span><b>Prototype</b> — the cart is real (saved in your browser's local storage), but "sending to Mastex" just exports a file or copies text. There's no order-submission backend.</span>
+  </div>
+</div>
+
+<div class="wrap" id="wrap"></div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/cart.js"></script>
+<script>
+const VENDOR_COLORS = { MCHOSE:"#e8590c", HOTO:"#e8332c", Moondrop:"#0d9488" };
+function colorFor(vendor){
+  if(VENDOR_COLORS[vendor]) return VENDOR_COLORS[vendor];
+  let h=0; for(const c of vendor) h=(h*31+c.charCodeAt(0))>>>0;
+  return `hsl(${h%360} 60% 45%)`;
+}
+
+const wrap = document.getElementById("wrap");
+
+function render(){
+  const items = MastexCart.all();
+  if(items.length === 0){
+    wrap.innerHTML = `
+      <div class="empty-state">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <h3>Your order list is empty</h3>
+        <p>Browse a vendor page and click "Add to order" on any product.</p>
+        <a href="index.html">Browse vendors</a>
+      </div>`;
+    return;
+  }
+
+  const byVendor = {};
+  items.forEach(i => { (byVendor[i.vendor] ||= []).push(i); });
+
+  const groupsHtml = Object.keys(byVendor).sort().map(vendor => {
+    const list = byVendor[vendor];
+    const subtotal = list.reduce((s,i)=>s+i.qty*i.price,0);
+    const rows = list.map(item => `
+      <div class="item-row" data-vendor="${vendor}" data-code="${item.code}">
+        <div class="item-info">
+          <div class="item-name">${item.name}</div>
+          <div class="item-sku">${item.sku}</div>
+        </div>
+        <div class="item-price">$${item.price.toFixed(2)}</div>
+        <div class="qty-stepper">
+          <button class="qty-btn" data-action="dec">−</button>
+          <span class="qty-val">${item.qty}</span>
+          <button class="qty-btn" data-action="inc">+</button>
+        </div>
+        <div class="item-total">$${(item.qty*item.price).toFixed(2)}</div>
+        <button class="item-remove" data-action="remove" title="Remove">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    `).join("");
+    return `
+      <div class="vendor-group">
+        <div class="vendor-head">
+          <span class="vendor-dot" style="background:${colorFor(vendor)}"></span>
+          <h2>${vendor}</h2>
+          <span class="vendor-subtotal">${list.reduce((s,i)=>s+i.qty,0)} items · $${subtotal.toFixed(2)}</span>
+        </div>
+        ${rows}
+      </div>`;
+  }).join("");
+
+  const totalCount = MastexCart.totalCount();
+  const totalValue = MastexCart.totalValue();
+
+  wrap.innerHTML = `
+    ${groupsHtml}
+    <div class="summary">
+      <div class="summary-row"><span>${totalCount} item${totalCount===1?'':'s'} across ${Object.keys(byVendor).length} vendor${Object.keys(byVendor).length===1?'':'s'}</span><span></span></div>
+      <div class="summary-row total"><span>Total</span><span>$${totalValue.toFixed(2)}</span></div>
+      <div class="summary-actions">
+        <button class="btn-primary" id="exportCsv">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export as CSV
+        </button>
+        <button class="btn-secondary" id="copyText">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy as text
+        </button>
+        <button class="btn-secondary btn-danger" id="clearCart">Clear order list</button>
+      </div>
+    </div>
+  `;
+
+  wrap.querySelectorAll(".item-row").forEach(row => {
+    row.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-action]");
+      if(!btn) return;
+      const vendor = row.dataset.vendor, code = row.dataset.code;
+      const item = MastexCart.all().find(i=>i.vendor===vendor && i.code===code);
+      if(!item) return;
+      if(btn.dataset.action === "inc") MastexCart.add(vendor, item, 1);
+      else if(btn.dataset.action === "dec") MastexCart.add(vendor, item, -1);
+      else if(btn.dataset.action === "remove") MastexCart.removeItem(vendor, code);
+      render();
+    });
+  });
+
+  document.getElementById("exportCsv").addEventListener("click", exportCsv);
+  document.getElementById("copyText").addEventListener("click", copyText);
+  document.getElementById("clearCart").addEventListener("click", () => {
+    if(confirm("Clear the entire order list? This can't be undone.")){
+      MastexCart.clear();
+      render();
+    }
+  });
+}
+
+function csvEscape(v){
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+function exportCsv(){
+  const items = MastexCart.all();
+  const rows = [["Vendor","Product Code","SKU","Description","Qty","Unit Price","Line Total"]];
+  items.forEach(i => rows.push([i.vendor, i.code, i.sku, i.name, i.qty, i.price.toFixed(2), (i.qty*i.price).toFixed(2)]));
+  rows.push([]);
+  rows.push(["", "", "", "", "", "Grand Total", MastexCart.totalValue().toFixed(2)]);
+  const csv = rows.map(r => r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const date = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `mastex-order-list-${date}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("CSV downloaded");
+}
+
+function copyText(){
+  const items = MastexCart.all();
+  const byVendor = {};
+  items.forEach(i => { (byVendor[i.vendor] ||= []).push(i); });
+  const date = new Date().toLocaleDateString();
+  let lines = [`Mastex Order List — ${date}`, ""];
+  Object.keys(byVendor).sort().forEach(vendor => {
+    lines.push(vendor);
+    byVendor[vendor].forEach(i => {
+      lines.push(`  ${i.sku}  ${i.name}  x${i.qty}  $${i.price.toFixed(2)}  = $${(i.qty*i.price).toFixed(2)}`);
+    });
+    lines.push("");
+  });
+  lines.push(`Grand Total: $${MastexCart.totalValue().toFixed(2)}`);
+  navigator.clipboard?.writeText(lines.join("\n")).then(()=> showToast("Order list copied to clipboard")).catch(()=> showToast("Couldn't copy — try Export CSV instead"));
+}
+
+let toastTimer;
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove("show"), 2000);
+}
+
+window.addEventListener("cart:change", render);
+
+document.getElementById("themeToggle").addEventListener("click", ()=> MastexTheme.toggle());
+
+render();
+</script>
+</body>
+</html>
