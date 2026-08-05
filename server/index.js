@@ -4,17 +4,23 @@
  *
  * Renders the vendor hub and one page per vendor directly from whatever is
  * currently in data/*.json — there is no per-vendor template or route to
- * hand-write. When scripts/sync-catalog.js (in ../sync) discovers a vendor
- * tab in the sheet, it writes data/<slug>.json, and /vendor/<slug> starts
- * serving a real page immediately, with no code change and no restart.
+ * hand-write. When sync/sync-catalog.js discovers a vendor tab in the sheet,
+ * it writes data/<slug>.json, and /vendor/<slug> starts serving a real page
+ * immediately, with no code change and no restart.
+ *
+ * Config comes from .env (see .env.example) — PORT here, SHEET_ID in
+ * sync/sync-catalog.js. Note PM2 (ecosystem.config.js) sets its own PORT
+ * for this process when run via `pm2 start`, which wins over .env's value —
+ * keep the two in sync if you change one.
  */
 
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const { vendorTheme, initials } = require("./lib/vendor-theme");
 
-const PORT = process.env.PORT || 4173;
+const PORT = process.env.PORT || 8002;
 const ROOT = path.join(__dirname, "..");
 const DATA_DIR = path.join(ROOT, "data");
 const IMAGES_DIR = path.join(DATA_DIR, "images");

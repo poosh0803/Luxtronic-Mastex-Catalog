@@ -42,29 +42,39 @@ Google Sheet:
 
 ```
 server/
-  index.js            Express app: GET /, GET /vendor/:slug, GET /cart
+  index.js            Express app: GET /, GET /vendor/:slug, GET /cart, GET /favorites,
+                       plus GET /api/favorites[/:slug] + POST /api/favorites/toggle
   lib/vendor-theme.js  deterministic per-vendor accent color + initials + slugify
-  views/               EJS templates — hub.ejs, vendor.ejs, cart.ejs (one generic
-                       vendor.ejs renders every vendor; no per-vendor template)
+  views/               EJS templates — hub.ejs, vendor.ejs, cart.ejs, favorites.ejs (one
+                       generic vendor.ejs renders every vendor; no per-vendor template)
   public/
-    css/site.css        one stylesheet for every page
-    js/theme.js          shared light/dark theme (localStorage), same on every page
-    js/cart.js           shared "order list" cart (localStorage), same on every page
-    js/catalog.js        generic vendor-page behavior (search/sort/favorites/modal/cart)
-    js/hub.js            hub page search filter
-    js/cart-page.js      /cart page rendering + CSV/text export
+    css/site.css          one stylesheet for every page
+    js/theme.js            shared light/dark theme (localStorage), same on every page
+    js/cart.js             shared "order list" cart (localStorage), same on every page
+    js/product-helpers.js  shared stock/price/image/cart-item logic — used by both
+                           catalog.js and favorites.js so the two can't drift apart
+    js/catalog.js          generic vendor-page behavior (search/sort/modal/cart), favorites
+                           loaded from/saved to the server, not kept in memory
+    js/favorites.js        the /favorites page: cross-vendor grid, remove-to-unfavorite
+    js/favorites-badge.js  the small "N favorited" badge shown next to the nav link
+    js/hub.js              hub page search filter
+    js/cart-page.js        /cart page rendering + CSV/text export
 
 sync/
   sync-catalog.js     downloads the sheet, discovers every vendor tab, writes data/*
 
-data/                 GENERATED — gitignored, rebuild with `npm run sync`
+data/                 mostly GENERATED — gitignored except favorites.json (see below)
   meta.json            vendor list + last-sync summary; the hub and server both read
                        this to know which vendors exist
   <slug>.json           product list per vendor
   images/<slug>/*        product photos per vendor
+  favorites.json        NOT generated — real user state (see §4), tracked in git via a
+                        `.gitignore` exception (`/data/*` + `!/data/favorites.json`)
 
-ecosystem.config.js   PM2: mastex-catalog-server (always on) + mastex-catalog-sync
-                       (cron_restart, daily)
+.env / .env.example   PORT, SHEET_ID — see §6 for how these are loaded and where PORT
+                       actually gets decided when running under PM2
+ecosystem.config.js   PM2: mastex-catalog-server (always on, port from here — see §6) +
+                       mastex-catalog-sync (cron_restart, daily)
 prototype/            RETIRED. Static 3-vendor demo from before this rebuild. Nothing
                        reads from or writes to this folder anymore — do not add to it.
 ```
@@ -79,6 +89,7 @@ There is still no real backend beyond this — no database, no auth, no order-su
 endpoint. "Live" means: the scheduled sync script rewrites `data/*` on disk, and the
 server reads that fresh on every request. The cart/order-list is entirely client-side
 (`localStorage`), shared across pages via a `cart:change` event and a common storage key.
+Favorites are the one exception — see §4.
 
 ## 3. Requirements Gathered So Far (chronological)
 
@@ -99,12 +110,12 @@ server reads that fresh on every request. The cart/order-list is entirely client
    **stay consistent across every page** once toggled.
 6. Product images must be **strictly square**, achieved by **shrinking to fit, never
    cropping** (`object-fit: contain`, not `cover`). Getting the box itself to actually stay
-   square took two attempts — see the incident note in §6.2's predecessor work: `aspect-
-   ratio: 1/1` on a flex container whose image child has `height:100%` is unreliable
-   (confirmed by measuring rendered pixel dimensions, not just eyeballing a screenshot);
-   the fix is the classic `padding-top: 100%` box technique, which has no such dependency.
-   This is why `.card-media`/`.modal-media` in `site.css` look the way they do — don't
-   "simplify" them back to `aspect-ratio` without re-reading why.
+   square took two attempts: `aspect-ratio: 1/1` on a flex container whose image child has
+   `height:100%` is unreliable (confirmed by measuring rendered pixel dimensions, not just
+   eyeballing a screenshot); the fix is the classic `padding-top: 100%` box technique,
+   which has no such dependency. This is why `.card-media`/`.modal-media` in `site.css`
+   look the way they do — don't "simplify" them back to `aspect-ratio` without re-reading
+   why.
 7. Write up everything requested into a doc for a future session (this document), and
    look into automating the daily refresh with **Node + PM2** since the supplier updates
    the sheet daily. Explicitly told to write the doc first and not touch code that turn.
@@ -119,11 +130,26 @@ server reads that fresh on every request. The cart/order-list is entirely client
    going forward. This is what drove the rebuild into `server/` + `sync/` + `data/`
    described in §2, and the switch from 3 hardcoded vendor pages to all 30 discovered
    dynamically (§6).
+10. **Favorites reported "not working."** Root cause: favorites had only ever been kept
+    in an in-memory `Set()` that reset on every page load/navigation — clicking the star
+    did nothing durable. Asked to fix it by "just creating a JSON file to store the data."
+    Since there's no per-user login, implemented as one **shared** favorites list
+    (`data/favorites.json`) via `GET/POST /api/favorites*`, not per-browser
+    `localStorage` — a deliberate choice, not an oversight (see §4).
+11. Asked for an **"All Favourites" button on the hub + a page showing every favorited
+    item across all vendors** (`/favorites`, §2/§4) — the natural next step once
+    favorites were shared/persistent rather than per-vendor-page-only.
+12. Asked to **create a real `.env` and use it in the program** — moved `PORT` and
+    `SHEET_ID` out of hardcoded values into `.env`/`.env.example` (§6).
+13. Changed the run port to **8002** and simplified `ecosystem.config.js` back to plain
+    hardcoded values (no `dotenv` inside that file) — see §6 for exactly how `.env` and
+    PM2 interact now that they're not both loading dotenv the same way.
 
 ## 4. Frontend Spec (current target state)
 
 - One dynamically-rendered page per vendor (`/vendor/:slug`) + one hub (`/`) + one order
-  list (`/cart`). No per-vendor HTML file exists; `views/vendor.ejs` is the only template.
+  list (`/cart`) + one cross-vendor favorites view (`/favorites`). No per-vendor HTML file
+  exists; `views/vendor.ejs` is the only template for vendor pages.
 - Every vendor page has: search box, favorites (star + "favorites only" filter), sort
   (name/price/stock), grid/list view toggle, stock badges (in stock / low / out /
   discontinued), a "NEW" tag where the sheet's Remark column says so, and a product detail
@@ -131,6 +157,19 @@ server reads that fresh on every request. The cart/order-list is entirely client
 - No category filter chips. A small read-only category/type label on each card (falls
   back to the vendor's own name if the sheet has no category sub-headers for it, e.g.
   Moondrop).
+- Favorites are **shared, not per-browser** — persisted server-side in
+  `data/favorites.json` via `GET/POST /api/favorites*` (`server/index.js`), not
+  `localStorage`. There's no per-user login yet, so "favorited" currently means "favorited
+  by anyone using the tool," same as the cart conceptually is one shared order list. If
+  per-user favorites/logins ever get built, this is the piece that needs to change.
+  - Every vendor page's star button reads/writes this on click (optimistic UI update,
+    reverts if the request fails) instead of a local variable that used to reset on every
+    reload — that reset was the original bug report this fixed.
+  - `/favorites` (hub has an "All Favourites" nav button + live count badge) resolves
+    every `{vendorSlug, code}` pair against each vendor's current `data/<slug>.json` and
+    shows them as normal product cards (real price/stock/image, "Add to order" works),
+    labeled by vendor instead of category. Clicking the star here removes it entirely
+    rather than just toggling a filter.
 - Cart / order list:
   - "Add to order" control on every card and in the modal; becomes a qty stepper once an
     item is in the cart.
@@ -212,7 +251,19 @@ files.
     daily and exits until the next trigger. A price/stock/photo change in the sheet is
     live on the site by the next morning with no manual step.
 - Both are running locally on this dev machine right now (`pm2 start
-  ecosystem.config.js` + `pm2 save`).
+  ecosystem.config.js` + `pm2 save`), currently serving on **port 8002**.
+- **Config comes from `.env`** (copy `.env.example` to `.env` — gitignored, not
+  committed): `PORT` and `SHEET_ID`. Both `server/index.js` and `sync/sync-catalog.js`
+  load `.env` themselves independently, so `node server/index.js` / `npm run serve` work
+  correctly even outside PM2. `ecosystem.config.js` does **not** load `dotenv` itself
+  (that was tried and deliberately reverted back to plain hardcoded values) — its `env:
+  { PORT: ... }` block hardcodes the port PM2 actually launches the server with, and
+  that value **wins over `.env`'s `PORT`** whenever PM2 is what starts the process
+  (PM2 sets `process.env.PORT` on the child before the child's own `dotenv.config()`
+  runs, and dotenv doesn't override an already-set variable). **If you change the port,
+  change it in both `.env` and `ecosystem.config.js`** — nothing keeps them in sync
+  automatically, and disagreeing between "run via PM2" and "run directly" is exactly the
+  kind of thing that's confusing to debug later.
 - **Not done: surviving a machine reboot.** `pm2 save` persists the process list, but PM2
   doesn't auto-start on boot on Windows without extra setup (the `pm2-windows-startup`
   package, or a Task Scheduler entry running `pm2 resurrect` at login). Worth doing before
@@ -221,16 +272,25 @@ files.
   (`192.168.68.255`, deployed via `git pull` + `pm2 restart`), is where this should
   permanently live.
 
-### 6.1 Known bug already hit and fixed here
+### 6.1 Known bugs already hit and fixed here
 
-Testing surfaced a real one: leftover `localStorage` cart data from testing the old
-prototype (same `localhost:4173` origin, different cart item shape — `vendor` field
-instead of `vendorSlug`/`vendorName`) silently crashed `/cart`'s render (a `.sort()`
-comparator call on `undefined.localeCompare`), leaving the page blank with no error shown
-to the user. Fixed by making `MastexCart.all()` filter out any entry that doesn't match
-the current shape, so a schema change or corrupted entry degrades gracefully instead of
-blanking the whole page. If the cart data shape changes again, keep this defensive filter
-in mind rather than assuming `localStorage` only ever contains well-formed current data.
+- Leftover `localStorage` cart data from testing the old prototype (same origin,
+  different cart item shape — `vendor` field instead of `vendorSlug`/`vendorName`)
+  silently crashed `/cart`'s render (a `.sort()` comparator call on
+  `undefined.localeCompare`), leaving the page blank with no error shown to the user.
+  Fixed by making `MastexCart.all()` filter out any entry that doesn't match the current
+  shape, so a schema change or corrupted entry degrades gracefully instead of blanking
+  the whole page. If the cart data shape changes again, keep this defensive filter in
+  mind rather than assuming `localStorage` only ever contains well-formed current data.
+- **`.gitignore`'s `/data/` rule silently defeated its own exception.** The intent was
+  "ignore everything generated in `data/`, except `favorites.json` (real user state)":
+  `/data/` followed by `!/data/favorites.json`. This doesn't work — a bare directory
+  pattern (`/data/`) tells git not to even *look inside* the directory, so the negation
+  line is never reached and `favorites.json` stayed untracked/uncommitted. The fix is
+  `/data/*` (ignore the directory's *contents* by default, which still lets git evaluate
+  per-file negation rules) + `!/data/favorites.json`. If more real-state files ever need
+  to live alongside the generated `data/*.json`, this is the pattern to reuse — a bare
+  `/data/` will just as silently swallow future exceptions too.
 
 ### 6.2 Open questions
 

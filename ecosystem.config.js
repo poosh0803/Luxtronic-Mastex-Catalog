@@ -3,6 +3,13 @@
  *
  *   pm2 start ecosystem.config.js
  *
+ * PORT below is set to run on 8002. server/index.js and sync/sync-catalog.js
+ * each load .env themselves (see .env.example) for their own config
+ * (PORT / SHEET_ID) when run directly with `node`/`npm run`, but PM2 always
+ * passes the PORT set here to the server process, so this is the value that
+ * wins whenever PM2 is what starts it — keep .env's PORT in sync with this
+ * if you change one, so direct-run and PM2-run don't disagree.
+ *
  * - mastex-catalog-server: long-running Express server (server/index.js).
  *   Renders the vendor hub and every /vendor/:slug page directly from
  *   data/*.json — no per-vendor template, no restart needed when a vendor
@@ -23,7 +30,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       env: {
-        PORT: 4173,
+        PORT: process.env.PORT || 8002,
       },
     },
     {

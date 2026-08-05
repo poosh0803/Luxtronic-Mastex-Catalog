@@ -18,14 +18,19 @@
  * Run manually with `npm run sync`, or on a schedule via PM2
  * (see ecosystem.config.js). See REQUIREMENTS.md §5.2 for why the image
  * extraction works the way it does.
+ *
+ * SHEET_ID comes from .env (see .env.example) — override it there if Mastex
+ * ever moves the catalog to a different spreadsheet; the default below is
+ * only a fallback for a checkout with no .env yet.
  */
 
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const AdmZip = require("adm-zip");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
-const SHEET_ID = "1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y";
+const SHEET_ID = process.env.SHEET_ID || "1FJ_I-othbHcsSF8H1DDkrrJb0OfNAPL5AOje-Bl4q9Y";
 const WORKBOOK_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx`;
 
 const ROOT = path.join(__dirname, "..");
