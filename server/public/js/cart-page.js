@@ -22,6 +22,16 @@
 
   const wrap = document.getElementById("wrap");
 
+  // Ex is the price the cart actually totals (see MastexCart.totalValue());
+  // inc (ex × 1.1, GST-inclusive) and RRP (sale price) are both re-derived
+  // here purely for the smaller reference line, never summed as cost.
+  function priceSubline(exPrice, rrp) {
+    const inc = Math.round(exPrice * 1.1 * 100) / 100;
+    const parts = [`$${inc.toFixed(2)} inc`];
+    if (rrp) parts.push(`$${rrp.toFixed(2)} RRP`);
+    return parts.join(" &nbsp;·&nbsp; ");
+  }
+
   function render() {
     const items = MastexCart.all();
     if (items.length === 0) {
@@ -47,7 +57,10 @@
             <div class="item-name">${item.name}</div>
             <div class="item-sku">${item.sku}</div>
           </div>
-          <div class="item-price">$${item.price.toFixed(2)}</div>
+          <div class="item-price">
+            <span class="item-price-ex">$${item.price.toFixed(2)}</span>
+            <span class="item-price-sub">${priceSubline(item.price, item.priceRrp)}</span>
+          </div>
           <div class="qty-stepper">
             <button class="qty-btn" data-action="dec">−</button>
             <span class="qty-val">${item.qty}</span>
@@ -72,13 +85,20 @@
 
     const totalCount = MastexCart.totalCount();
     const totalValue = MastexCart.totalValue();
+    const totalValueRrp = items.reduce((s, i) => s + i.qty * (i.priceRrp || 0), 0);
     const vendorCount = Object.keys(byVendor).length;
 
     wrap.innerHTML = `
       ${groupsHtml}
       <div class="summary">
         <div class="summary-row"><span>${totalCount} item${totalCount === 1 ? "" : "s"} across ${vendorCount} vendor${vendorCount === 1 ? "" : "s"}</span><span></span></div>
-        <div class="summary-row total"><span>Total</span><span>$${totalValue.toFixed(2)}</span></div>
+        <div class="summary-row total">
+          <span>Total (ex)</span>
+          <span class="summary-total-price">
+            $${totalValue.toFixed(2)}
+            <span class="summary-total-sub">${priceSubline(totalValue, totalValueRrp)}</span>
+          </span>
+        </div>
         <div class="summary-actions">
           <button class="btn-primary" id="exportCsv">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>

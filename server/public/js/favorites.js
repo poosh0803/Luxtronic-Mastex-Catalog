@@ -5,7 +5,7 @@
    before this runs, so no extra fetch is needed here.
    ============================================================ */
 (function () {
-  const { stockInfo, mediaHtml, priceHtml, cartItemMeta } = window.MastexProduct;
+  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta } = window.MastexProduct;
   let items = window.__FAVORITE_ITEMS__ || [];
 
   let state = { q: "", inStockOnly: false, sort: "relevance", view: "grid" };
@@ -33,8 +33,8 @@
     }
     switch (state.sort) {
       case "name-asc": list.sort((a, b) => a.name.localeCompare(b.name)); break;
-      case "price-asc": list.sort((a, b) => a.rrp - b.rrp); break;
-      case "price-desc": list.sort((a, b) => b.rrp - a.rrp); break;
+      case "price-asc": list.sort((a, b) => a.priceEx - b.priceEx); break;
+      case "price-desc": list.sort((a, b) => b.priceEx - a.priceEx); break;
       case "stock-desc": list.sort((a, b) => b.soh - a.soh); break;
       case "vendor": list.sort((a, b) => a.vendorName.localeCompare(b.vendorName) || a.name.localeCompare(b.name)); break;
     }
@@ -169,9 +169,7 @@
         <h2 class="modal-title">${item.name}</h2>
         <div class="modal-sku">SKU ${item.sku}${item.remark ? ` &nbsp;·&nbsp; <b style="color:var(--accent)">${item.remark}</b>` : ""}</div>
         <div class="modal-price-row">
-          ${item.rrp
-            ? `<span class="modal-price">$${item.rrp}</span><span class="modal-price-ex">RRP &nbsp;·&nbsp; cost $${item.priceEx} ex</span>`
-            : `<span class="modal-price" style="font-size:18px;color:var(--text-dim);">Price to be confirmed</span>`}
+          ${modalPriceHtml(item)}
           <span class="badge ${stock.cls}">${stock.label}</span>
         </div>
         <dl class="spec-grid">

@@ -12,7 +12,7 @@
   const VENDOR_SLUG = window.__VENDOR_SLUG__;
   const VENDOR_NAME = window.__VENDOR_NAME__;
   const PRODUCTS = window.__PRODUCTS__ || [];
-  const { stockInfo, mediaHtml, priceHtml, cartItemMeta } = window.MastexProduct;
+  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta } = window.MastexProduct;
 
   let state = { q: "", inStockOnly: false, favOnly: false, sort: "relevance", view: "grid" };
   // Favorites are shared, persisted server-side in data/favorites.json (see
@@ -70,8 +70,8 @@
     }
     switch (state.sort) {
       case "name-asc": list.sort((a, b) => a.name.localeCompare(b.name)); break;
-      case "price-asc": list.sort((a, b) => a.rrp - b.rrp); break;
-      case "price-desc": list.sort((a, b) => b.rrp - a.rrp); break;
+      case "price-asc": list.sort((a, b) => a.priceEx - b.priceEx); break;
+      case "price-desc": list.sort((a, b) => b.priceEx - a.priceEx); break;
       case "stock-desc": list.sort((a, b) => b.soh - a.soh); break;
     }
     return list;
@@ -171,9 +171,7 @@
         <h2 class="modal-title">${prod.name}</h2>
         <div class="modal-sku">SKU ${prod.sku}${prod.remark ? ` &nbsp;·&nbsp; <b style="color:var(--accent)">${prod.remark}</b>` : ""}</div>
         <div class="modal-price-row">
-          ${prod.rrp
-            ? `<span class="modal-price">$${prod.rrp}</span><span class="modal-price-ex">RRP &nbsp;·&nbsp; cost $${prod.priceEx} ex</span>`
-            : `<span class="modal-price" style="font-size:18px;color:var(--text-dim);">Price to be confirmed</span>`}
+          ${modalPriceHtml(prod)}
           <span class="badge ${stock.cls}">${stock.label}</span>
         </div>
         <dl class="spec-grid">

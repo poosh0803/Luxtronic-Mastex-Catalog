@@ -21,14 +21,48 @@
     </div>`;
   }
 
+  // Three distinct prices, ex-price-first (internal tool — staff, not
+  // customers): ex (what the sheet lists as cost, ex GST) is the
+  // prominent figure everywhere; inc (ex × 1.1, GST-inclusive cost — NOT
+  // the same number as RRP) and RRP (the sheet's recommended *sale*
+  // price) are both secondary reference figures shown smaller alongside.
+  function formatMoney(n) {
+    const rounded = Math.round(n * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+  }
+  function incPrice(prod) {
+    return Math.round(prod.priceEx * 1.1 * 100) / 100;
+  }
+  function priceSubline(prod) {
+    const parts = [`$${formatMoney(incPrice(prod))} inc`];
+    if (prod.rrp) parts.push(`$${formatMoney(prod.rrp)} RRP`);
+    return parts.join(" &nbsp;·&nbsp; ");
+  }
+
   function priceHtml(prod) {
-    if (!prod.rrp) return `<span class="card-price" style="font-size:13px;color:var(--text-dim);">Price TBC</span>`;
-    return `<span class="card-price">$${prod.rrp}</span>`;
+    if (!prod.priceEx) return `<span class="card-price" style="font-size:13px;color:var(--text-dim);">Price TBC</span>`;
+    return `<span class="card-price-wrap">
+      <span class="card-price">$${formatMoney(prod.priceEx)}</span>
+      <span class="card-price-sub">${priceSubline(prod)}</span>
+    </span>`;
   }
 
+  // Same ex/inc/RRP breakdown, plus margin %, for the product detail modal.
+  function modalPriceHtml(prod) {
+    if (!prod.priceEx) {
+      return `<span class="modal-price" style="font-size:18px;color:var(--text-dim);">Price to be confirmed</span>`;
+    }
+    return `<span class="modal-price">$${formatMoney(prod.priceEx)}</span>
+      <span class="modal-price-sub">${priceSubline(prod)}</span>
+      ${prod.rrp ? `<span class="badge margin">${prod.margin}% margin</span>` : ""}`;
+  }
+
+  // price = ex (what the cart/order-list totals up); priceRrp = RRP (sale
+  // price), kept alongside purely for reference display in the cart —
+  // inc is re-derived there too (price × 1.1), never summed as cost.
   function cartItemMeta(prod) {
-    return { code: prod.code, sku: prod.sku, name: prod.name, price: prod.rrp };
+    return { code: prod.code, sku: prod.sku, name: prod.name, price: prod.priceEx, priceRrp: prod.rrp };
   }
 
-  window.MastexProduct = { stockInfo, mediaHtml, priceHtml, cartItemMeta };
+  window.MastexProduct = { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta };
 })(window);

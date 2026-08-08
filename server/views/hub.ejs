@@ -48,12 +48,15 @@
 </div>
 
 <div class="banner">
-  <div class="banner-inner">
-    <span>🔄</span>
-    <span>
-      <% if (syncedAt) { %>Catalog last synced <%= new Date(syncedAt).toLocaleString() %>.<% } else { %>Catalog has not synced yet — run <code>npm run sync</code>.<% } %>
-      <% if (errors && errors.length) { %> <b><%= errors.length %> vendor(s) failed to sync</b> on the last run — check server logs.<% } %>
+  <div class="banner-inner" style="justify-content:space-between;">
+    <span style="display:flex; align-items:center; gap:8px;">
+      <span>🔄</span>
+      <span id="syncStatusText">
+        <% if (syncedAt) { %>Catalog last synced <%= new Date(syncedAt).toLocaleString() %>.<% } else { %>Catalog has not synced yet.<% } %>
+        <% if (errors && errors.length) { %> <b><%= errors.length %> vendor(s) failed to sync</b> on the last run — check server logs.<% } %>
+      </span>
     </span>
+    <button class="btn-secondary" id="syncNowBtn" style="padding:6px 12px; font-size:12.5px; flex-shrink:0;">Sync now</button>
   </div>
 </div>
 

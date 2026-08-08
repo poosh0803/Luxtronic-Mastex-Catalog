@@ -26,7 +26,7 @@
     const cart = load();
     const k = keyOf(vendorSlug, item.code);
     if (qty <= 0) { delete cart[k]; }
-    else { cart[k] = { vendorSlug, vendorName, code: item.code, sku: item.sku, name: item.name, price: item.price, qty }; }
+    else { cart[k] = { vendorSlug, vendorName, code: item.code, sku: item.sku, name: item.name, price: item.price, priceRrp: item.priceRrp, qty }; }
     save(cart);
   }
   function add(vendorSlug, vendorName, item, delta) {

@@ -16,6 +16,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 const express = require("express");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const { vendorTheme, initials } = require("./lib/vendor-theme");
@@ -25,6 +26,50 @@ const ROOT = path.join(__dirname, "..");
 const DATA_DIR = path.join(ROOT, "data");
 const IMAGES_DIR = path.join(DATA_DIR, "images");
 const FAVORITES_PATH = path.join(DATA_DIR, "favorites.json");
+const SYNC_SCRIPT = path.join(ROOT, "sync", "sync-catalog.js");
+
+// Manual "sync now" support: runs sync/sync-catalog.js as a child process
+// (same script the daily PM2 cron job runs) so a slow ~50MB download/parse
+// never blocks the server's event loop. Only one run at a time; state is
+// in-memory (fine — there's one server process and no login/session split).
+const SYNC_LOG_MAX_CHARS = 8000;
+const syncState = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  exitCode: null,
+  log: "",
+};
+
+function appendSyncLog(chunk) {
+  syncState.log = (syncState.log + chunk).slice(-SYNC_LOG_MAX_CHARS);
+}
+
+function startSync() {
+  if (syncState.running) return false;
+  syncState.running = true;
+  syncState.startedAt = new Date().toISOString();
+  syncState.finishedAt = null;
+  syncState.exitCode = null;
+  syncState.log = "";
+
+  const child = spawn(process.execPath, [SYNC_SCRIPT], { cwd: ROOT });
+  child.stdout.on("data", (d) => appendSyncLog(d.toString()));
+  child.stderr.on("data", (d) => appendSyncLog(d.toString()));
+  child.on("close", (code) => {
+    syncState.running = false;
+    syncState.finishedAt = new Date().toISOString();
+    syncState.exitCode = code;
+  });
+  child.on("error", (err) => {
+    syncState.running = false;
+    syncState.finishedAt = new Date().toISOString();
+    syncState.exitCode = -1;
+    appendSyncLog(`\nFailed to start sync process: ${err.message}\n`);
+  });
+
+  return true;
+}
 
 const app = express();
 app.set("view engine", "ejs");
@@ -165,6 +210,16 @@ app.post("/api/favorites/toggle", (req, res) => {
   }
   writeFavorites(list);
   res.json({ favorited });
+});
+
+app.post("/api/sync", (req, res) => {
+  const started = startSync();
+  if (!started) return res.status(409).json({ error: "A sync is already running.", running: true });
+  res.json({ started: true });
+});
+
+app.get("/api/sync/status", (req, res) => {
+  res.json(syncState);
 });
 
 app.listen(PORT, () => {
