@@ -52,7 +52,7 @@
       const totals = orderTotals(order);
       const isOpen = expanded.has(order.id);
       const rows = order.items.map((item) => `
-        <div class="item-row" data-order="${order.id}" data-code="${item.code}">
+        <div class="item-row" data-order="${order.id}" data-vendor="${item.vendorSlug}" data-code="${item.code}">
           <div class="item-info">
             <div class="item-name">${item.name}</div>
             <div class="item-sku">${item.vendorName} &nbsp;·&nbsp; ${item.sku}</div>
@@ -112,9 +112,12 @@
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: newItems }),
+    }).then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }).catch((err) => {
       console.error("Failed to save order", err);
-      showToast("Couldn't save changes — try again");
+      showToast("Couldn't save changes — reloading to stay in sync");
+      setTimeout(() => window.location.reload(), 1200);
     });
   }
 
@@ -123,8 +126,12 @@
     expanded.delete(id);
     render();
     showToast("Order deleted");
-    fetch(`/api/orders/${id}`, { method: "DELETE" }).catch((err) => {
+    fetch(`/api/orders/${id}`, { method: "DELETE" }).then((res) => {
+      if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
+    }).catch((err) => {
       console.error("Failed to delete order", err);
+      showToast("Couldn't delete — reloading to stay in sync");
+      setTimeout(() => window.location.reload(), 1200);
     });
   }
 
@@ -138,7 +145,14 @@
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ label: order.label }),
-        }).then(() => showToast("Saved")).catch((err) => console.error("Failed to rename order", err));
+        }).then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          showToast("Saved");
+        }).catch((err) => {
+          console.error("Failed to rename order", err);
+          showToast("Couldn't save the label — reloading to stay in sync");
+          setTimeout(() => window.location.reload(), 1200);
+        });
       });
     });
 
@@ -173,21 +187,27 @@
         if (!btn) return;
         const order = findOrder(row.dataset.order);
         if (!order) return;
+        const vendorSlug = row.dataset.vendor;
         const code = row.dataset.code;
-        const item = order.items.find((i) => i.code === code);
+        // Match on vendorSlug + code, not code alone — an order can span
+        // multiple vendors, and two vendors could in principle share a
+        // product code. Matching by code only would silently edit every
+        // line with that code instead of just the one clicked.
+        const isTarget = (i) => i.vendorSlug === vendorSlug && i.code === code;
+        const item = order.items.find(isTarget);
         if (!item) return;
 
         if (btn.dataset.action === "inc") {
-          const newItems = order.items.map((i) => (i.code === code ? { ...i, qty: i.qty + 1 } : i));
+          const newItems = order.items.map((i) => (isTarget(i) ? { ...i, qty: i.qty + 1 } : i));
           saveOrderItems(order, newItems);
         } else if (btn.dataset.action === "dec") {
           const newQty = item.qty - 1;
           const newItems = newQty > 0
-            ? order.items.map((i) => (i.code === code ? { ...i, qty: newQty } : i))
-            : order.items.filter((i) => i.code !== code);
+            ? order.items.map((i) => (isTarget(i) ? { ...i, qty: newQty } : i))
+            : order.items.filter((i) => !isTarget(i));
           saveOrderItems(order, newItems);
         } else if (btn.dataset.action === "remove") {
-          const newItems = order.items.filter((i) => i.code !== code);
+          const newItems = order.items.filter((i) => !isTarget(i));
           saveOrderItems(order, newItems);
         }
       });
