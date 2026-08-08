@@ -254,3 +254,16 @@ footer a{color:var(--accent); text-decoration:none;}
 .summary-total-price{display:flex; flex-direction:column; align-items:flex-end; gap:1px;}
 .summary-total-sub{font-size:12px; font-weight:600; color:var(--text-dim);}
 .summary-actions{display:flex; gap:10px; flex-wrap:wrap;}
+
+/* ---------- Order history page ---------- */
+.order-card{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; margin-bottom:14px;}
+.order-head{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+.order-head-main{display:flex; align-items:baseline; gap:12px; min-width:0; flex-wrap:wrap;}
+.order-label-input{border:1px solid transparent; background:transparent; font-size:15px; font-weight:700; color:var(--text); padding:4px 6px; border-radius:7px; min-width:120px; max-width:320px;}
+.order-label-input:hover{border-color:var(--border);}
+.order-label-input:focus{outline:none; border-color:var(--accent); background:var(--surface-2);}
+.order-date{font-size:12px; color:var(--text-dim); flex-shrink:0;}
+.order-head-meta{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.order-summary{font-size:12.5px; color:var(--text-dim); flex-shrink:0;}
+.order-items{margin-top:14px; padding-top:14px; border-top:1px solid var(--border);}
+.order-items .item-row:last-child{margin-bottom:0;}

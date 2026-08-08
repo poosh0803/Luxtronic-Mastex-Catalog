@@ -43,11 +43,13 @@ Google Sheet:
 ```
 server/
   index.js            Express app: GET /, GET /vendor/:slug, GET /cart, GET /favorites,
-                       plus GET /api/favorites[/:slug] + POST /api/favorites/toggle,
-                       plus POST /api/sync + GET /api/sync/status (see below)
+                       GET /orders, plus GET /api/favorites[/:slug] + POST
+                       /api/favorites/toggle, GET/POST /api/orders + PUT/DELETE
+                       /api/orders/:id, plus POST /api/sync + GET /api/sync/status
   lib/vendor-theme.js  deterministic per-vendor accent color + initials + slugify
-  views/               EJS templates — hub.ejs, vendor.ejs, cart.ejs, favorites.ejs (one
-                       generic vendor.ejs renders every vendor; no per-vendor template)
+  views/               EJS templates — hub.ejs, vendor.ejs, cart.ejs, favorites.ejs,
+                       orders.ejs (one generic vendor.ejs renders every vendor; no
+                       per-vendor template)
   public/
     css/site.css          one stylesheet for every page
     js/theme.js            shared light/dark theme (localStorage), same on every page
@@ -59,18 +61,23 @@ server/
     js/favorites.js        the /favorites page: cross-vendor grid, remove-to-unfavorite
     js/favorites-badge.js  the small "N favorited" badge shown next to the nav link
     js/hub.js              hub page search filter + "Sync now" button
-    js/cart-page.js        /cart page rendering + CSV/text export
+    js/cart-page.js        /cart page rendering + CSV/text export + "Save to order
+                           history"
+    js/orders.js           the /orders page: list/edit/delete saved orders, restore an
+                           order back into the live cart
 
 sync/
   sync-catalog.js     downloads the sheet, discovers every vendor tab, writes data/*
 
-data/                 mostly GENERATED — gitignored except favorites.json (see below)
+data/                 mostly GENERATED — gitignored except favorites.json/orders.json
   meta.json            vendor list + last-sync summary; the hub and server both read
                        this to know which vendors exist
   <slug>.json           product list per vendor
   images/<slug>/*        product photos per vendor
   favorites.json        NOT generated — real user state (see §4), tracked in git via a
                         `.gitignore` exception (`/data/*` + `!/data/favorites.json`)
+  orders.json            NOT generated — saved order history (see §3.19/§4), tracked in
+                        git the same way (`!/data/orders.json`)
 
 .env / .env.example   PORT, SHEET_ID — see §6 for how these are loaded and where PORT
                        actually gets decided when running under PM2
@@ -87,10 +94,12 @@ same code path serves all 30 vendors today and whatever Mastex adds tomorrow, as
 the next sync writes a new `data/<slug>.json`.
 
 There is still no real backend beyond this — no database, no auth, no order-submission
-endpoint. "Live" means: the scheduled sync script rewrites `data/*` on disk, and the
-server reads that fresh on every request. The cart/order-list is entirely client-side
-(`localStorage`), shared across pages via a `cart:change` event and a common storage key.
-Favorites are the one exception — see §4.
+endpoint (Mastex still doesn't receive anything automatically — CSV export/copy-as-text
+are as far as it goes). "Live" means: the scheduled sync script rewrites `data/*` on disk,
+and the server reads that fresh on every request. The working cart/order-list is entirely
+client-side (`localStorage`), shared across pages via a `cart:change` event and a common
+storage key. Favorites and order history are the two exceptions — both persisted
+server-side instead, see §4.
 
 ## 3. Requirements Gathered So Far (chronological)
 
@@ -197,6 +206,43 @@ Favorites are the one exception — see §4.
     unaffected (still ex-only, per #17). Same schema-drift caveat as #17: pre-existing
     `localStorage` entries have neither `priceRrp` nor the old `priceInc`, so their
     reference line is simply blank until re-added.
+19. Added **order history** (`/orders`) — a durable, editable record of past orders,
+    distinct from the ephemeral `localStorage` cart. Key design decisions, worked out
+    before writing any code:
+    - **Frozen snapshots, not live references.** Unlike every other view in this app
+      (which always reads fresh from `data/<slug>.json`), an order record stores each
+      item's `name`/`sku`/`price`/`priceRrp` exactly as they were when saved. A later
+      sync changing a price, or dropping a discontinued product from the sheet entirely,
+      must not silently alter what a past order shows — that's the whole point of a
+      history. This is a deliberate exception to the project's usual "always read fresh"
+      philosophy (§2), not an oversight.
+    - **Storage:** `data/orders.json`, a flat array, same pattern as `favorites.json` —
+      shared (no login exists, same as cart/favorites), synchronous read-modify-write in
+      one request handler (`readOrders`/`writeOrders`/`sanitizeOrderItems` in
+      `server/index.js`), tracked in git via the same `.gitignore` exception technique.
+    - **API:** `GET/POST /api/orders`, `PUT/DELETE /api/orders/:id` — `PUT` replaces
+      either `items` or `label` (or both) wholesale, same "send the whole array back"
+      shape `PUT /api/favorites` never needed but `orders.js`'s per-line edits do.
+    - **"Save to order history"** lives on `/cart` (`cart-page.js`), not `/orders` —
+      there's no "start a blank order" flow; every order originates from a cart. Saving
+      **clears the working cart** (decided explicitly, not assumed) — the framing is "I've
+      sent this to Mastex," ready for the next one, matching how the cart page already
+      talks about "sending to Mastex." Prompts for an optional label via a plain
+      `prompt()`, consistent with the existing `confirm()` used for "Clear order list."
+    - **Editing** happens two ways, both built: (1) inline on `/orders` — qty
+      steppers/remove per line, reusing the cart page's `item-row` markup and CSS,
+      PUT-ing the updated `items` array on every change; removing an order's last item is
+      treated as deleting the whole order (confirmed first) rather than sending an empty
+      array, which the server rejects anyway. (2) **"Restore to cart"** — the
+      session-like path: pushes an order's items back into the live cart via
+      `MastexCart.setQty()` (merges by code/vendor, doesn't clear unrelated cart
+      contents) and jumps to `/cart`, so a past order can be used as a starting point for
+      a bigger edit or a repeat order.
+    - **No status field** (Draft/Sent/Received) — decided against for v1, kept as a
+      possible future extension. An order is just a dated, labeled snapshot.
+    - Nav: an "Order history" icon link (clock icon) added to every page's top bar
+      (`hub.ejs`, `vendor.ejs`, `cart.ejs`, `favorites.ejs`), same place the other
+      cross-page links (`/cart`, `/favorites`) already live.
 
 ## 4. Frontend Spec (current target state)
 
@@ -235,7 +281,12 @@ Favorites are the one exception — see §4.
   - `/cart` groups by vendor, shows per-vendor and grand totals (all ex-price, §3.17–18 —
     inc/RRP shown smaller as reference only, never summed), and supports CSV export +
     copy-as-text (`Vendor, Product Code, SKU, Description, Qty, Unit Price, Line Total` —
-    Unit Price/Line Total are ex, plus a grand-total row).
+    Unit Price/Line Total are ex, plus a grand-total row), plus "Save to order history"
+    (§3.19), which clears the cart.
+- Order history (`/orders`, §3.19): saved snapshots of past carts, persisted server-side
+  in `data/orders.json` (shared, like favorites/cart) — **frozen at save time**, not
+  re-resolved against current vendor data. Editable in place (qty steppers/remove per
+  line) or restorable back into the live cart to reorder/extend. No status workflow.
 - Theme: light by default, persisted (`localStorage`, key `mastexTheme_v1`), identical on
   every page, toggle in the top-right of the top bar.
 - Cart and theme icons pinned to the right edge of the top bar on every page

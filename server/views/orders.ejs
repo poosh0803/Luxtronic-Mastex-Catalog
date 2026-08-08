@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Order List — Mastex Catalog</title>
+<title>Order History — Mastex Catalog</title>
 <link rel="stylesheet" href="/css/site.css">
 <style>
   :root{ --accent:#e8590c; --accent-2:#ff8c42; --accent-soft:#fff1e8; }
@@ -15,10 +15,10 @@
 <div class="topbar">
   <div class="topbar-inner">
     <div class="brand">
-      <div class="brand-mark">MX</div>
+      <div class="brand-mark">🕘</div>
       <div class="brand-text">
-        <b>Order List</b>
-        <span>For Mastex</span>
+        <b>Order History</b>
+        <span>Saved order lists</span>
       </div>
     </div>
     <a href="/" class="back-link" style="margin-left:auto;">
@@ -29,8 +29,9 @@
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
       <span class="cart-badge" id="favoritesBadge">0</span>
     </a>
-    <a class="icon-btn" href="/orders" title="Order history">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <a class="icon-btn" href="/cart" title="Order list">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+      <span class="cart-badge" id="cartBadge">0</span>
     </a>
     <button class="icon-btn" id="themeToggle" title="Toggle theme">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -39,14 +40,14 @@
 </div>
 
 <div class="hero">
-  <h1>Your order list</h1>
-  <p>Items you've added across any vendor page, combined into one list. Adjust quantities below, then export it as a CSV or copy it as plain text to send to Mastex.</p>
+  <h1>Order history</h1>
+  <p>Every order list you've saved from the cart. Each one is a frozen snapshot — prices here stay as they were when you saved it, even if the sheet changes later. Edit quantities directly, or restore an order back into your current cart to reorder or build on it.</p>
 </div>
 
 <div class="banner">
   <div class="banner-inner">
-    <span>🛒</span>
-    <span>This cart is real (saved in your browser's local storage), but "sending to Mastex" just exports a file or copies text — there's no order-submission backend yet.</span>
+    <span>🕘</span>
+    <span>Shared across everyone using this tool, same as the cart and favorites — there's no per-user login yet.</span>
   </div>
 </div>
 
@@ -56,6 +57,9 @@
 
 <script src="/js/cart.js"></script>
 <script src="/js/favorites-badge.js"></script>
-<script src="/js/cart-page.js"></script>
+<script>
+  window.__ORDERS__ = <%- JSON.stringify(orders) %>;
+</script>
+<script src="/js/orders.js"></script>
 </body>
 </html>

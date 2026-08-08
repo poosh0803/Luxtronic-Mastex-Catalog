@@ -100,7 +100,11 @@
           </span>
         </div>
         <div class="summary-actions">
-          <button class="btn-primary" id="exportCsv">
+          <button class="btn-primary" id="saveOrder">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save to order history
+          </button>
+          <button class="btn-secondary" id="exportCsv">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export as CSV
           </button>
@@ -127,6 +131,7 @@
       });
     });
 
+    document.getElementById("saveOrder").addEventListener("click", saveToOrderHistory);
     document.getElementById("exportCsv").addEventListener("click", exportCsv);
     document.getElementById("copyText").addEventListener("click", copyText);
     document.getElementById("clearCart").addEventListener("click", () => {
@@ -135,6 +140,34 @@
         render();
       }
     });
+  }
+
+  // Snapshots the current cart into data/orders.json (server/index.js) as a
+  // frozen order record, then clears the working cart — "saving" means
+  // "I've sent this to Mastex," ready for the next one. See REQUIREMENTS.md
+  // for why order history freezes prices instead of re-reading live data.
+  function saveToOrderHistory() {
+    const label = prompt("Label for this order (optional):", "");
+    if (label === null) return; // cancelled
+    const items = MastexCart.all();
+    fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, items }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(() => {
+        MastexCart.clear();
+        render();
+        showToast("Saved to order history");
+      })
+      .catch((err) => {
+        console.error("Failed to save order", err);
+        showToast("Couldn't save — try again");
+      });
   }
 
   function csvEscape(v) {
