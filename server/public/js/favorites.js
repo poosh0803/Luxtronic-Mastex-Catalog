@@ -5,7 +5,7 @@
    before this runs, so no extra fetch is needed here.
    ============================================================ */
 (function () {
-  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta } = window.MastexProduct;
+  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard } = window.MastexProduct;
   let items = window.__FAVORITE_ITEMS__ || [];
 
   let state = { q: "", inStockOnly: false, sort: "relevance", view: "grid" };
@@ -197,8 +197,9 @@
       openModal(item); render();
     });
     document.getElementById("modalCopy").addEventListener("click", () => {
-      navigator.clipboard?.writeText(item.sku).catch(() => {});
-      showToast(`Copied "${item.sku}"`);
+      copyToClipboard(item.sku)
+        .then(() => showToast(`Copied "${item.sku}"`))
+        .catch(() => showToast("Couldn't copy — select and copy the SKU manually"));
     });
     document.getElementById("modalFav").addEventListener("click", () => {
       modalOverlay.classList.remove("open");

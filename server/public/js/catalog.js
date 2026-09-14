@@ -12,7 +12,7 @@
   const VENDOR_SLUG = window.__VENDOR_SLUG__;
   const VENDOR_NAME = window.__VENDOR_NAME__;
   const PRODUCTS = window.__PRODUCTS__ || [];
-  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta } = window.MastexProduct;
+  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard } = window.MastexProduct;
 
   let state = { q: "", inStockOnly: false, favOnly: false, sort: "relevance", view: "grid" };
   // Favorites are shared, persisted server-side in data/favorites.json (see
@@ -199,8 +199,9 @@
       openModal(code); render();
     });
     document.getElementById("modalCopy").addEventListener("click", () => {
-      navigator.clipboard?.writeText(prod.sku).catch(() => {});
-      showToast(`Copied "${prod.sku}"`);
+      copyToClipboard(prod.sku)
+        .then(() => showToast(`Copied "${prod.sku}"`))
+        .catch(() => showToast("Couldn't copy — select and copy the SKU manually"));
     });
     document.getElementById("modalFav").addEventListener("click", () => {
       toggleFavorite(prod.code);

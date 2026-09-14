@@ -195,6 +195,30 @@
     showToast("CSV downloaded");
   }
 
+  // navigator.clipboard only exists in a "secure context" (https:// or
+  // localhost) — this app is also reached over plain http:// on a LAN IP
+  // (e.g. http://192.168.68.255:8002), where navigator.clipboard is
+  // undefined. `execCommand("copy")` is deprecated but still works there,
+  // so it's the fallback rather than the only path.
+  function copyToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) resolve(); else reject(new Error("execCommand copy failed"));
+    });
+  }
+
   function copyText() {
     const items = MastexCart.all();
     const byVendor = {};
@@ -209,7 +233,9 @@
       lines.push("");
     });
     lines.push(`Grand Total: $${MastexCart.totalValue().toFixed(2)}`);
-    navigator.clipboard?.writeText(lines.join("\n")).then(() => showToast("Order list copied to clipboard")).catch(() => showToast("Couldn't copy — try Export CSV instead"));
+    copyToClipboard(lines.join("\n"))
+      .then(() => showToast("Order list copied to clipboard"))
+      .catch(() => showToast("Couldn't copy — try Export CSV instead"));
   }
 
   let toastTimer;
