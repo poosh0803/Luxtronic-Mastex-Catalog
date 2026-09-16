@@ -32,6 +32,13 @@
     return parts.join(" &nbsp;·&nbsp; ");
   }
 
+  // Text shown wherever a demo-discounted line needs explaining — the
+  // total no longer equals qty × unit price on its own, so every output
+  // (on-screen, CSV, copy-as-text, copy-as-table) says why.
+  function demoNote(item) {
+    return item.demo ? "1 demo unit @ 50%" : "";
+  }
+
   function render() {
     const items = MastexCart.all();
     if (items.length === 0) {
@@ -50,7 +57,7 @@
 
     const groupsHtml = Object.keys(byVendor).sort((a, b) => byVendor[a].name.localeCompare(byVendor[b].name)).map((slug) => {
       const group = byVendor[slug];
-      const subtotal = group.items.reduce((s, i) => s + i.qty * i.price, 0);
+      const subtotal = group.items.reduce((s, i) => s + MastexCart.lineTotal(i), 0);
       const rows = group.items.map((item) => `
         <div class="item-row" data-vendor="${slug}" data-code="${item.code}">
           <div class="item-info">
@@ -66,7 +73,14 @@
             <span class="qty-val">${item.qty}</span>
             <button class="qty-btn" data-action="inc">+</button>
           </div>
-          <div class="item-total">$${(item.qty * item.price).toFixed(2)}</div>
+          <div class="item-total">
+            $${MastexCart.lineTotal(item).toFixed(2)}
+            ${item.demo ? `<span class="item-demo-note">${demoNote(item)}</span>` : ""}
+          </div>
+          <label class="demo-toggle" title="Request for demo — one unit of this item at half price">
+            <input type="checkbox" data-action="demo" ${item.demo ? "checked" : ""}>
+            <span>Demo</span>
+          </label>
           <button class="item-remove" data-action="remove" title="Remove">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -112,6 +126,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Copy as text
           </button>
+          <button class="btn-secondary" id="copyTable">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            Copy as table
+          </button>
           <button class="btn-secondary btn-danger" id="clearCart">Clear order list</button>
         </div>
       </div>
@@ -120,7 +138,7 @@
     wrap.querySelectorAll(".item-row").forEach((row) => {
       row.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-action]");
-        if (!btn) return;
+        if (!btn || btn.dataset.action === "demo") return; // handled by its own "change" listener below
         const slug = row.dataset.vendor, code = row.dataset.code;
         const item = MastexCart.all().find((i) => i.vendorSlug === slug && i.code === code);
         if (!item) return;
@@ -129,11 +147,17 @@
         else if (btn.dataset.action === "remove") MastexCart.removeItem(slug, code);
         render();
       });
+      const demoCheckbox = row.querySelector('[data-action="demo"]');
+      demoCheckbox.addEventListener("change", () => {
+        MastexCart.setDemo(row.dataset.vendor, row.dataset.code, demoCheckbox.checked);
+        render();
+      });
     });
 
     document.getElementById("saveOrder").addEventListener("click", saveToOrderHistory);
     document.getElementById("exportCsv").addEventListener("click", exportCsv);
     document.getElementById("copyText").addEventListener("click", copyText);
+    document.getElementById("copyTable").addEventListener("click", copyTable);
     document.getElementById("clearCart").addEventListener("click", () => {
       if (confirm("Clear the entire order list? This can't be undone.")) {
         MastexCart.clear();
@@ -177,10 +201,10 @@
 
   function exportCsv() {
     const items = MastexCart.all();
-    const rows = [["Vendor", "Product Code", "SKU", "Description", "Qty", "Unit Price", "Line Total"]];
-    items.forEach((i) => rows.push([i.vendorName, i.code, i.sku, i.name, i.qty, i.price.toFixed(2), (i.qty * i.price).toFixed(2)]));
+    const rows = [["Vendor", "Product Code", "SKU", "Description", "Qty", "Unit Price", "Line Total", "Demo"]];
+    items.forEach((i) => rows.push([i.vendorName, i.code, i.sku, i.name, i.qty, i.price.toFixed(2), MastexCart.lineTotal(i).toFixed(2), demoNote(i)]));
     rows.push([]);
-    rows.push(["", "", "", "", "", "Grand Total", MastexCart.totalValue().toFixed(2)]);
+    rows.push(["", "", "", "", "", "Grand Total", MastexCart.totalValue().toFixed(2), ""]);
     const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -228,7 +252,8 @@
     Object.keys(byVendor).sort().forEach((vendorName) => {
       lines.push(vendorName);
       byVendor[vendorName].forEach((i) => {
-        lines.push(`  ${i.sku}  ${i.name}  x${i.qty}  $${i.price.toFixed(2)}  = $${(i.qty * i.price).toFixed(2)}`);
+        const note = i.demo ? `  [${demoNote(i)}]` : "";
+        lines.push(`  ${i.sku}  ${i.name}  x${i.qty}  $${i.price.toFixed(2)}  = $${MastexCart.lineTotal(i).toFixed(2)}${note}`);
       });
       lines.push("");
     });
@@ -236,6 +261,101 @@
     copyToClipboard(lines.join("\n"))
       .then(() => showToast("Order list copied to clipboard"))
       .catch(() => showToast("Couldn't copy — try Export CSV instead"));
+  }
+
+  function tsvSafe(v) {
+    return String(v).replace(/[\t\r\n]+/g, " ").trim();
+  }
+
+  function escapeHtml(v) {
+    return String(v)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // A plain tab-separated string (what this button used to send) just
+  // shows up as one line of tab-spaced text in Gmail/Outlook/Word — it
+  // does NOT paste as a real table the way copying a range out of Excel
+  // does. Getting that requires putting an actual HTML <table> on the
+  // clipboard alongside a plain-text fallback, so a rich-text paste target
+  // renders bordered cells and a plain-text target still gets something
+  // readable. `copyRichToClipboard` below writes both at once.
+  function copyTable() {
+    const items = MastexCart.all();
+    const header = ["Vendor", "Product Code", "SKU", "Description", "Qty", "Unit Price", "Line Total", "Demo", "Note"];
+    const dataRows = items.map((i) => [i.vendorName, i.code, i.sku, i.name, i.qty, i.price.toFixed(2), MastexCart.lineTotal(i).toFixed(2), demoNote(i), ""]);
+    const totalRow = ["", "", "", "", "", "Grand Total", MastexCart.totalValue().toFixed(2), "", ""];
+
+    const text = [header, ...dataRows, totalRow].map((r) => r.map(tsvSafe).join("\t")).join("\r\n");
+
+    const cellStyle = "border:1px solid #ccc;padding:4px 10px;font-family:Arial,Helvetica,sans-serif;font-size:13px;";
+    const headStyle = cellStyle + "background:#f2f2f2;font-weight:bold;text-align:left;";
+    const totalStyle = cellStyle + "font-weight:bold;";
+    const theadHtml = `<tr>${header.map((h) => `<th style="${headStyle}">${escapeHtml(h)}</th>`).join("")}</tr>`;
+    const bodyHtml = dataRows.map((r) => `<tr>${r.map((c) => `<td style="${cellStyle}">${escapeHtml(c)}</td>`).join("")}</tr>`).join("");
+    // colspan=6 covers Vendor..Unit Price so the total value lands in its
+    // own cell under "Line Total", matching where the plain-text row above
+    // puts it; two trailing empty cells keep the row's column count (9)
+    // matching the header so it doesn't paste one column short.
+    const totalHtml = `<tr><td colspan="6" style="${totalStyle}text-align:right;">Grand Total</td><td style="${totalStyle}">${escapeHtml(totalRow[6])}</td><td style="${cellStyle}"></td><td style="${cellStyle}"></td></tr>`;
+    const html = `<table style="border-collapse:collapse;">${theadHtml}${bodyHtml}${totalHtml}</table>`;
+
+    copyRichToClipboard(html, text)
+      .then(() => showToast("Order list copied as a table"))
+      .catch(() => showToast("Couldn't copy — try Export CSV instead"));
+  }
+
+  // Writes an HTML table + a plain-text fallback to the clipboard together,
+  // so pasting into a rich target (email, Word, Docs) renders real bordered
+  // cells, same as pasting a copied Excel range — and a plain-text target
+  // still gets the tab-separated fallback. navigator.clipboard.write() is
+  // the modern path but (like writeText) is gated behind a secure context;
+  // the fallback intercepts the "copy" event during execCommand("copy") and
+  // supplies both MIME types itself, which works even over plain http://.
+  function copyRichToClipboard(html, text) {
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+      const item = new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      });
+      return navigator.clipboard.write([item]).catch(() => execCommandRichCopy(html, text));
+    }
+    return execCommandRichCopy(html, text);
+  }
+
+  function execCommandRichCopy(html, text) {
+    return new Promise((resolve, reject) => {
+      function onCopy(e) {
+        e.preventDefault();
+        e.clipboardData.setData("text/html", html);
+        e.clipboardData.setData("text/plain", text);
+      }
+      // execCommand("copy") needs a real selection to succeed reliably
+      // across browsers; the "copy" listener above then overrides what
+      // actually gets written with the html/text pair instead of this
+      // holder's own plain-text content.
+      const holder = document.createElement("div");
+      holder.setAttribute("contenteditable", "true");
+      holder.style.position = "fixed";
+      holder.style.opacity = "0";
+      holder.textContent = text;
+      document.body.appendChild(holder);
+      const range = document.createRange();
+      range.selectNodeContents(holder);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      holder.focus();
+      document.addEventListener("copy", onCopy);
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.removeEventListener("copy", onCopy);
+      sel.removeAllRanges();
+      document.body.removeChild(holder);
+      if (ok) resolve(); else reject(new Error("execCommand copy failed"));
+    });
   }
 
   let toastTimer;

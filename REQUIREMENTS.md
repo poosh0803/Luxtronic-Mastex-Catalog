@@ -243,6 +243,81 @@ server-side instead, see §4.
     - Nav: an "Order history" icon link (clock icon) added to every page's top bar
       (`hub.ejs`, `vendor.ejs`, `cart.ejs`, `favorites.ejs`), same place the other
       cross-page links (`/cart`, `/favorites`) already live.
+20. **Bug, found after deploying to the LAN server (§6.3): clipboard copy silently did
+    nothing over plain HTTP.** `navigator.clipboard` only exists in a browser "secure
+    context" (`https://` or `localhost`) — this app is also reached over plain
+    `http://192.168.68.255:8002` (a LAN IP, not `https://`), where
+    `navigator.clipboard` is `undefined`. The old code did
+    `navigator.clipboard?.writeText(...).then(...)`, which silently became
+    `undefined.then(...)` and **threw before any toast could show** — so "Copy as text"
+    on `/cart` and "Copy SKU" in the product modal (vendor pages + `/favorites`) all
+    just did nothing, with no visible error. Fixed with a `copyToClipboard()` helper
+    (`product-helpers.js`, mirrored in `cart-page.js` since that page doesn't load
+    `product-helpers.js`) that uses the real Clipboard API when available and falls
+    back to the older `document.execCommand("copy")` technique (via a hidden,
+    off-screen `<textarea>`) when it isn't — `execCommand` doesn't require a secure
+    context, so it works over plain HTTP too.
+21. Added a **"Copy as table" button on `/cart`**, alongside "Copy as text" — the goal is
+    pasting into an email (or Word/Docs) and having it show up as an actual bordered
+    table, the way pasting a copied Excel range does, not a wall of text. Same columns as
+    `exportCsv()` (`Vendor, Product Code, SKU, Description, Qty, Unit Price, Line Total`,
+    plus a `Grand Total` row) with one addition: a trailing **`Note` column, always
+    blank**. Explicitly scoped to this button only, not the on-screen cart — there is no
+    editable note field anywhere in the app; the blank column exists purely so there's
+    somewhere to type remarks manually after pasting.
+    - **First attempt was wrong:** just writing tab-separated (TSV) plain text to the
+      clipboard. That *does* land as real columns when pasted into Excel/Sheets, but
+      pasting TSV plain text into a rich-text target like Gmail/Outlook compose just
+      shows up as one line of tab-spaced text — it does not render as a table. Reported
+      back immediately as "didn't copy as table like I want."
+    - **Fix:** the clipboard needs an actual HTML `<table>` on it, not just delimited
+      text — that's what a rich-text paste target (email compose, Word, Docs) picks up
+      and renders as bordered cells; a plain-text target (Notepad, a plain textarea)
+      still falls back to the TSV string. `copyTable()` builds both an HTML table
+      (inline-styled `<table>`/`<tr>`/`<td>`, since pasted content generally keeps
+      inline styles but drops `<style>` blocks/classes — light borders, padded cells,
+      bold shaded header row, matching a typical Excel-paste look) and the same TSV
+      string as before, values escaped with `escapeHtml()`/`tsvSafe()` respectively.
+    - **Writing two MIME types at once** needs `navigator.clipboard.write()` with a
+      `ClipboardItem({ "text/html": ..., "text/plain": ... })` — but that's the modern
+      async Clipboard API, gated behind a secure context exactly like `writeText()` was
+      (§3.20), so it's unusable on the plain-HTTP LAN deployment on its own.
+      `execCommandRichCopy()` is the fallback: create a hidden, focused, selected
+      `contenteditable` element (so `execCommand("copy")` has a real selection to act
+      on), intercept the browser's `copy` event, `preventDefault()` it, and supply the
+      HTML/plain pair directly via `event.clipboardData.setData(...)` — this technique
+      doesn't touch `navigator.clipboard` at all, so it works over plain HTTP too.
+      `copyRichToClipboard()` tries the modern API first (when the page happens to be in
+      a secure context) and falls back to this otherwise.
+22. Added **"Request for demo" per cart line** — a checkbox on the right of each `/cart`
+    row (before the remove button). Checking it means **one unit of that line is billed
+    at half its ex price** (a supplier demo/sample concession), not a per-unit price
+    change: `MastexCart.lineTotal(item)` = `qty × price − (demo ? price / 2 : 0)`, so
+    checking it on a qty-1 line halves the whole line, and on a qty-5 line discounts only
+    one of the five units. Deliberately **ex-only** — the inc/RRP reference figures (both
+    per-line and the `/cart` grand total's RRP line) stay at their normal, undiscounted
+    values; only the ex total that actually gets ordered/summed changes. `demo` is a new
+    boolean field on the cart's `localStorage` item shape (`cart.js`), alongside a new
+    `MastexCart.setDemo(vendorSlug, code, demo)` — and `setQty()` had to change too:
+    every existing qty +/- path rebuilds the cart entry from a freshly-built
+    `{ code, sku, name, price, priceRrp }` (no `demo` field, since it's cart-only state,
+    not product data), so `setQty()` now falls back to whatever the *existing* cart
+    entry's `demo` was when the caller doesn't explicitly pass one, instead of silently
+    resetting it to `false` on every quantity change.
+    - **Shown everywhere the line total is shown**, not just on-screen: a small
+      "1 demo unit @ 50%" note appears under the on-screen total, in `copyText()`'s
+      line (`[1 demo unit @ 50%]`), as a new `Demo` column in `exportCsv()`, and as a
+      new `Demo` column in `copyTable()` — positioned before the always-blank `Note`
+      column from #21, since that one stays app-generated-content-free by design and
+      this is deliberately the opposite (an app-generated note, not a manual one).
+    - **Fixed a column-count bug in `copyTable()`'s total row while extending it**: the
+      HTML version's `colspan` was one column short of the header count even before this
+      change (5 covering cells + 2 more = 7 against an 8-column header), and its total
+      *value* landed a column earlier (under "Unit Price") than the plain-text version's
+      did (under "Line Total") — two formats disagreeing on where the number sits. Now
+      `colspan="6"` (covering Vendor..Unit Price) so the value cell lands under "Line
+      Total" in both the HTML and plain-text versions, and the row's cell count matches
+      the new 9-column header exactly.
 
 ## 4. Frontend Spec (current target state)
 
@@ -278,11 +353,15 @@ server-side instead, see §4.
   - "Add to order" control on every card and in the modal; becomes a qty stepper once an
     item is in the cart.
   - Cart persists and is shared across every page (`localStorage`, key `mastexCart_v1`).
-  - `/cart` groups by vendor, shows per-vendor and grand totals (all ex-price, §3.17–18 —
-    inc/RRP shown smaller as reference only, never summed), and supports CSV export +
-    copy-as-text (`Vendor, Product Code, SKU, Description, Qty, Unit Price, Line Total` —
-    Unit Price/Line Total are ex, plus a grand-total row), plus "Save to order history"
-    (§3.19), which clears the cart.
+  - Every `/cart` line has a **"Request for demo" checkbox** (§3.22) — bills one unit of
+    that line at half its ex price (`MastexCart.lineTotal()`), shown inline on-screen and
+    in all three export paths below; RRP/inc stay undiscounted reference figures.
+  - `/cart` groups by vendor, shows per-vendor and grand totals (all ex-price, §3.17–18,
+    §3.22 — inc/RRP shown smaller as reference only, never summed), and supports three
+    export paths — CSV download, copy-as-text (human-readable list), copy-as-table
+    (§3.21, an HTML table + plain-text fallback so pasting into email/Word renders real
+    bordered columns, not just delimited text, with a trailing blank `Note` column) —
+    plus "Save to order history" (§3.19), which clears the cart.
 - Order history (`/orders`, §3.19): saved snapshots of past carts, persisted server-side
   in `data/orders.json` (shared, like favorites/cart) — **frozen at save time**, not
   re-resolved against current vendor data. Editable in place (qty steppers/remove per
