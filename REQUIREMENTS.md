@@ -43,13 +43,17 @@ Google Sheet:
 ```
 server/
   index.js            Express app: GET /, GET /vendor/:slug, GET /cart, GET /favorites,
-                       GET /orders, plus GET /api/favorites[/:slug] + POST
+                       GET /orders, GET /stock, plus GET /api/favorites[/:slug] + POST
                        /api/favorites/toggle, GET/POST /api/orders + PUT/DELETE
-                       /api/orders/:id, plus POST /api/sync + GET /api/sync/status
+                       /api/orders/:id, POST /api/sync + GET /api/sync/status, GET
+                       /api/inventory/status
   lib/vendor-theme.js  deterministic per-vendor accent color + initials + slugify
+  lib/odoo-inventory.js your own on-hand Odoo stock (§3.23) — polls the separate
+                       Luxtronic-Odoo-API project, matches by EAN, enriches
+                       products server-side before /vendor/:slug + /favorites render
   views/               EJS templates — hub.ejs, vendor.ejs, cart.ejs, favorites.ejs,
-                       orders.ejs (one generic vendor.ejs renders every vendor; no
-                       per-vendor template)
+                       orders.ejs, stock.ejs (one generic vendor.ejs renders every
+                       vendor; no per-vendor template)
   public/
     css/site.css          one stylesheet for every page
     js/theme.js            shared light/dark theme (localStorage), same on every page
@@ -65,6 +69,8 @@ server/
                            history"
     js/orders.js           the /orders page: list/edit/delete saved orders, restore an
                            order back into the live cart
+    js/stock.js            the /stock page (§3.24): Mastex products on hand in your Odoo,
+                           "on hand only" toggle, vendor filter, two-way favorite toggle
 
 sync/
   sync-catalog.js     downloads the sheet, discovers every vendor tab, writes data/*
@@ -79,8 +85,8 @@ data/                 mostly GENERATED — gitignored except favorites.json/orde
   orders.json            NOT generated — saved order history (see §3.19/§4), tracked in
                         git the same way (`!/data/orders.json`)
 
-.env / .env.example   PORT, SHEET_ID — see §6 for how these are loaded and where PORT
-                       actually gets decided when running under PM2
+.env / .env.example   PORT, SHEET_ID, ODOO_API_URL (§3.23, optional) — see §6 for how
+                       these are loaded and where PORT actually gets decided under PM2
 ecosystem.config.js   PM2: mastex-catalog-server (always on, port from here — see §6) +
                        mastex-catalog-sync (cron_restart, daily)
 prototype/            RETIRED. Static 3-vendor demo from before this rebuild. Nothing
@@ -318,6 +324,70 @@ server-side instead, see §4.
       `colspan="6"` (covering Vendor..Unit Price) so the value cell lands under "Line
       Total" in both the HTML and plain-text versions, and the row's cell count matches
       the new 9-column header exactly.
+23. Added **your own Odoo on-hand stock**, shown on every product card and in the detail
+    modal (vendor pages + `/favorites`), so browsing this catalog and checking your own
+    warehouse stock no longer means two separate pages/tabs. Talks to a **separate,
+    already-existing project** — `Luxtronic-Odoo-API` (its own repo, deployed as
+    `luxtronic-odoo-api` on the same LAN server as this app, port 4001, no auth —
+    trusted-LAN only, per its own README) — not something built as part of this project.
+    - **Matched by EAN**: Mastex's `ean` field (already in every `data/<slug>.json`, from
+      the sheet's EAN column) against Odoo's `barcode` field on `product.product`/
+      `product.template` — confirmed **81 real matches** against the live catalog data
+      before writing any code (`GET /inventory/products/all`: 1,116 Odoo products, 960
+      with a barcode, zero duplicate barcodes). Exact string equality; no normalization
+      attempted beyond what `sync-catalog.js` already does to the sheet's EAN column — a
+      leading-zero mismatch between the two systems is a theoretical risk this wouldn't
+      catch, but wasn't observed in the current data.
+    - **Server-side enrichment, not a client-side fetch**: `server/lib/odoo-inventory.js`
+      keeps a small in-memory `EAN -> { qty, virtualQty, name }` cache, fetched once at
+      server start and then on a **30-minute** `setInterval` (started at 5 minutes;
+      lengthened on request to keep Odoo traffic light — one read-only `search_read` per
+      refresh, ~48/day). The whole response is ~325KB / ~1.4s — two orders of
+      magnitude smaller than the Mastex sheet sync, so none of that machinery — child
+      process, disk persistence, manual "sync now" button — was needed or used here).
+      `enrichWithInventory(products)` adds `odooQty`/`odooVirtualQty`/`odooName` directly
+      onto each product object before `/vendor/:slug` and `/favorites` render, so the
+      client-side JS (`catalog.js`/`favorites.js`) just reads `prod.odooQty` like any
+      other product field — no second fetch, no client-side EAN matching.
+    - **Shown even at zero** — "you have none of this either" is exactly the point, so
+      the badge (🏬, a new `--info`/`--info-bg` color distinct from the existing
+      good/warn/bad tokens, so it reads as "a different data source" rather than another
+      copy of Mastex's own in/low/out stock badge) only disappears when there's no EAN
+      match at all (`odooQty === undefined`), never because the matched quantity is 0.
+    - **Config**: `ODOO_API_URL` in `.env` (blank disables the feature entirely — checked
+      three ways: unset, unreachable, and working — each leaves the rest of the app
+      completely unaffected; an unreachable/erroring Odoo API surfaces a small warning
+      banner on vendor/`/favorites` pages instead of silently going stale with no
+      indication, but never blocks rendering or throws).
+    - Scoped to product-browsing pages only (vendor pages, `/favorites`, and later
+      `/stock`, §3.24) — not `/cart` or
+      `/orders`, since those are about what's being ordered *from* Mastex, a separate
+      concern from what's already in your own warehouse via Odoo.
+24. Added **`/stock` ("Stock on Hand")** — every Mastex product you *already hold in your
+    own Odoo inventory* (§3.23's EAN match), across every vendor, in one list. Answers
+    "which Mastex products do I have on hand right now?" without opening each vendor
+    page. **Not** a list of every Mastex product — an earlier draft built that, and it was
+    the wrong reading of the ask ("all stock on hand from Mastex, using the Odoo API").
+    Linked as a **"Stock on Hand" button next to the hub's search bar** (same
+    wide-labeled-button treatment as "All Favourites"), plus an icon-only link in every
+    other page's top bar — same cross-page nav pattern as `/orders` and `/favorites`.
+    - `GET /stock` reads every vendor's `data/<slug>.json`, runs `enrichWithInventory()`,
+      and sends **only products that got an `odooQty`** (i.e. matched by EAN; ~81 today),
+      sorted by your Odoo quantity, highest first. The vendor dropdown only lists vendors
+      that actually have matches (~11 today, not all 32).
+    - **"On hand only" toggle, on by default** (`odooQty > 0`, ~51 today) — turn it off to
+      also see matched products you're currently at zero on. This replaces the usual
+      "In stock only" toggle, which filters on *Mastex's* stock — not what this page is
+      about. Mastex's own stock badge still shows on each card for comparison (useful at a
+      glance: where you hold stock Mastex is out of, or vice versa), and "Mastex stock:
+      High to Low" stays as a secondary sort.
+    - The star is a genuine **two-way toggle** here (unlike `/favorites`, where it only
+      removes): `stock.js` loads favorites from the bulk `GET /api/favorites` into a
+      `"vendorSlug::code"`-keyed `Set` and reuses `catalog.js`'s optimistic
+      toggle-then-revert pattern.
+    - If `ODOO_API_URL` is unset, the page says so in a banner (it has nothing else to
+      show); if Odoo is unreachable, the usual §3.23 warning banner applies and the empty
+      state explains why there are no matches, rather than looking like a broken filter.
 
 ## 4. Frontend Spec (current target state)
 

@@ -12,7 +12,7 @@
   const VENDOR_SLUG = window.__VENDOR_SLUG__;
   const VENDOR_NAME = window.__VENDOR_NAME__;
   const PRODUCTS = window.__PRODUCTS__ || [];
-  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard } = window.MastexProduct;
+  const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard, odooBadgeHtml, odooModalHtml } = window.MastexProduct;
 
   let state = { q: "", inStockOnly: false, favOnly: false, sort: "relevance", view: "grid" };
   // Favorites are shared, persisted server-side in data/favorites.json (see
@@ -126,6 +126,7 @@
             ${priceHtml(prod)}
             <span class="badge ${stock.cls}">${stock.label}</span>
           </div>
+          ${odooBadgeHtml(prod) ? `<div class="card-odoo">${odooBadgeHtml(prod)}</div>` : ""}
           <div class="cart-ctrl" data-code="${prod.code}">${cartCtrlHtml(prod)}</div>
         </div>
       </div>`;
@@ -174,6 +175,7 @@
           ${modalPriceHtml(prod)}
           <span class="badge ${stock.cls}">${stock.label}</span>
         </div>
+        ${odooModalHtml(prod)}
         <dl class="spec-grid">
           <div class="spec-item"><dt>Product code</dt><dd>${prod.code}</dd></div>
           <div class="spec-item"><dt>EAN</dt><dd>${prod.ean || "—"}</dd></div>

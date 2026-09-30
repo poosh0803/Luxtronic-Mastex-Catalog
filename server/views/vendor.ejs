@@ -31,6 +31,9 @@
       <span class="kbd-hint">/</span>
     </div>
     <div class="topbar-actions">
+      <a class="icon-btn" href="/stock" title="Mastex products on hand in your Odoo">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+      </a>
       <a class="icon-btn" href="/favorites" title="All favourites">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         <span class="cart-badge" id="favoritesBadge">0</span>
@@ -55,6 +58,16 @@
     <span>Product data and photos are synced automatically from the supplier's Google Sheet. The order list is real (saved in your browser).</span>
   </div>
 </div>
+<% if (inventoryStatus && inventoryStatus.enabled && (inventoryStatus.error || !inventoryStatus.updatedAt)) { %>
+<div class="banner">
+  <div class="banner-inner" style="background:var(--warn-bg); border-color:color-mix(in srgb, var(--warn) 35%, var(--border));">
+    <span>🏬</span>
+    <span>
+      <% if (!inventoryStatus.updatedAt) { %>Odoo stock badges aren't showing yet — still waiting on the first successful fetch from the Odoo API.<% } else { %>Odoo stock badges may be stale — the last refresh failed (<%= inventoryStatus.error %>). Showing the last known values.<% } %>
+    </span>
+  </div>
+</div>
+<% } %>
 
 <div class="filterbar">
   <div class="filter-controls">

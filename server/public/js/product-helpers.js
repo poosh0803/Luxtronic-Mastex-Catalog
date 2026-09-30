@@ -64,6 +64,31 @@
     return { code: prod.code, sku: prod.sku, name: prod.name, price: prod.priceEx, priceRrp: prod.rrp };
   }
 
+  // Your own on-hand Odoo stock, matched by EAN server-side (see
+  // server/lib/odoo-inventory.js, which sets odooQty on any product with a
+  // matching barcode in Odoo before it ever reaches this page) — so this is
+  // a pure display concern, no fetch/lookup needed here. Absent entirely
+  // (undefined, not 0) for a product with no Odoo match; shown even at 0,
+  // since "you have none of this either" is exactly the point.
+  function hasOdooStock(prod) {
+    return prod.odooQty !== undefined && prod.odooQty !== null;
+  }
+  function odooBadgeHtml(prod) {
+    if (!hasOdooStock(prod)) return "";
+    const cls = prod.odooQty > 0 ? "has-stock" : "no-stock";
+    return `<span class="badge odoo ${cls}" title="Your on-hand Odoo stock, matched by EAN">🏬 ${prod.odooQty}</span>`;
+  }
+  function odooModalHtml(prod) {
+    if (!hasOdooStock(prod)) return "";
+    const cls = prod.odooQty > 0 ? "has-stock" : "no-stock";
+    const forecastNote = prod.odooVirtualQty !== prod.odooQty
+      ? ` <span class="modal-odoo-sub">(${prod.odooVirtualQty} forecast)</span>`
+      : "";
+    return `<div class="modal-odoo-row">
+      <span class="badge odoo ${cls}">🏬 Your stock: ${prod.odooQty} on hand</span>${forecastNote}
+    </div>`;
+  }
+
   // navigator.clipboard only exists in a "secure context" (https:// or
   // localhost) — this app is also reached over plain http:// on a LAN IP
   // (e.g. http://192.168.68.255:8002), where navigator.clipboard is
@@ -90,5 +115,5 @@
     });
   }
 
-  window.MastexProduct = { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard };
+  window.MastexProduct = { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard, odooBadgeHtml, odooModalHtml };
 })(window);

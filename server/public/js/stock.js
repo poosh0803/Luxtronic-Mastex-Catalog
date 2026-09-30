@@ -1,19 +1,60 @@
 /* ============================================================
-   The /favorites page: shows every favorited product across all
-   vendors. The server resolves each {vendorSlug, code} pair from
-   data/favorites.json into full product data (window.__FAVORITE_ITEMS__)
-   before this runs, so no extra fetch is needed here.
+   The /stock page: Mastex products you already hold in your own Odoo
+   inventory (server/index.js's GET /stock sends only EAN-matched
+   products, each with odooQty set). Unlike /favorites (where every
+   card is already favorited, so its star only ever removes), the star
+   here is a real two-way toggle, so favorite state is loaded from the
+   server the same way catalog.js does on a single vendor page.
    ============================================================ */
 (function () {
   const { stockInfo, mediaHtml, priceHtml, modalPriceHtml, cartItemMeta, copyToClipboard, odooBadgeHtml, odooModalHtml } = window.MastexProduct;
-  let items = window.__FAVORITE_ITEMS__ || [];
+  const items = window.__STOCK_ITEMS__ || [];
 
-  let state = { q: "", inStockOnly: false, sort: "relevance", view: "grid" };
+  let state = { q: "", vendor: "all", onHandOnly: true, sort: "odoo-desc", view: "grid" };
+  // Shared, persisted server-side in data/favorites.json (see catalog.js's
+  // identical reasoning) — keyed by "vendorSlug::code" since this page,
+  // unlike a single vendor page, spans every vendor at once.
+  let favorites = new Set();
+
+  function favKey(vendorSlug, code) { return vendorSlug + "::" + code; }
+
+  async function loadFavorites() {
+    try {
+      const res = await fetch("/api/favorites");
+      if (res.ok) {
+        const list = await res.json();
+        favorites = new Set(list.map((f) => favKey(f.vendorSlug, f.code)));
+      }
+    } catch (err) {
+      console.error("Failed to load favorites", err);
+    }
+    render();
+  }
+
+  function toggleFavorite(vendorSlug, code) {
+    const key = favKey(vendorSlug, code);
+    const wasFav = favorites.has(key);
+    if (wasFav) favorites.delete(key); else favorites.add(key);
+    render();
+    showToast(wasFav ? "Removed from favorites" : "Saved to favorites");
+    fetch("/api/favorites/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vendorSlug, code }),
+    }).then(() => {
+      window.MastexFavoritesBadge?.update();
+    }).catch((err) => {
+      console.error("Failed to save favorite, reverting", err);
+      if (wasFav) favorites.add(key); else favorites.delete(key);
+      render();
+    });
+  }
 
   const grid = document.getElementById("grid");
   const resultCount = document.getElementById("resultCount");
   const emptyState = document.getElementById("emptyState");
   const searchInput = document.getElementById("searchInput");
+  const vendorFilter = document.getElementById("vendorFilter");
 
   function findItem(vendorSlug, code) {
     return items.find((i) => i.vendorSlug === vendorSlug && i.code === code);
@@ -21,7 +62,8 @@
 
   function filteredItems() {
     let list = items.slice();
-    if (state.inStockOnly) list = list.filter((p) => p.soh > 0 && p.remark !== "EOL");
+    if (state.vendor !== "all") list = list.filter((p) => p.vendorSlug === state.vendor);
+    if (state.onHandOnly) list = list.filter((p) => p.odooQty > 0);
     if (state.q.trim()) {
       const q = state.q.trim().toLowerCase();
       list = list.filter((p) =>
@@ -32,6 +74,7 @@
       );
     }
     switch (state.sort) {
+      case "odoo-desc": list.sort((a, b) => b.odooQty - a.odooQty || a.name.localeCompare(b.name)); break;
       case "name-asc": list.sort((a, b) => a.name.localeCompare(b.name)); break;
       case "price-asc": list.sort((a, b) => a.priceEx - b.priceEx); break;
       case "price-desc": list.sort((a, b) => b.priceEx - a.priceEx); break;
@@ -56,49 +99,22 @@
     </button>`;
   }
 
-  function removeFavorite(item) {
-    items = items.filter((i) => !(i.vendorSlug === item.vendorSlug && i.code === item.code));
-    const footerSummary = document.getElementById("footerSummary");
-    if (footerSummary) {
-      const vendorCount = new Set(items.map((i) => i.vendorSlug)).size;
-      footerSummary.textContent = `${items.length} favorite${items.length === 1 ? "" : "s"} across ${vendorCount} vendor${vendorCount === 1 ? "" : "s"}`;
-    }
-    render();
-    showToast("Removed from favorites");
-    fetch("/api/favorites/toggle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorSlug: item.vendorSlug, code: item.code }),
-    }).then(() => window.MastexFavoritesBadge?.update())
-      .catch((err) => console.error("Failed to remove favorite", err));
-  }
-
   function render() {
     const list = filteredItems();
-    resultCount.textContent = `Showing ${list.length} of ${items.length} favorites`;
+    resultCount.textContent = `Showing ${list.length} of ${items.length} Mastex products matched in your Odoo`;
     grid.classList.toggle("list-mode", state.view === "list");
 
     if (list.length === 0) {
       grid.style.display = "none";
       emptyState.style.display = "block";
-      const title = document.getElementById("emptyStateTitle");
-      const body = document.getElementById("emptyStateBody");
-      const action = document.getElementById("emptyStateAction");
-      if (items.length === 0) {
-        title.textContent = "No favorites yet";
-        body.textContent = "Click the star on any product across any vendor page to save it here.";
-        action.textContent = "Browse vendors";
-        action.onclick = () => { location.href = "/"; };
-      } else {
-        title.textContent = "No favorites match your filters";
-        body.textContent = "Try a different search term or clear your filters.";
-        action.textContent = "Clear all filters";
-        action.onclick = () => {
-          state.q = ""; state.inStockOnly = false;
-          searchInput.value = ""; document.getElementById("inStockOnly").checked = false;
-          render();
-        };
-      }
+      const noMatches = items.length === 0;
+      document.getElementById("emptyStateTitle").textContent = noMatches
+        ? "No Mastex products found in your Odoo"
+        : "No products match your filters";
+      document.getElementById("emptyStateBody").textContent = noMatches
+        ? "Either the Odoo API hasn't been reached yet, or none of your Odoo barcodes match a Mastex EAN."
+        : "Try a different search term or clear your filters.";
+      document.getElementById("clearFilters").style.display = noMatches ? "none" : "";
       return;
     }
     grid.style.display = "grid";
@@ -106,11 +122,12 @@
 
     grid.innerHTML = list.map((item) => {
       const stock = stockInfo(item);
+      const isFav = favorites.has(favKey(item.vendorSlug, item.code));
       return `
       <div class="card" data-vendor="${item.vendorSlug}" data-code="${item.code}">
         ${item.remark === "NEW" ? '<span class="tag-new">NEW</span>' : ""}
-        <button class="fav-btn active" data-action="unfav" title="Remove from favorites">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <button class="fav-btn ${isFav ? "active" : ""}" data-action="fav" title="Save to favorites">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="${isFav ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </button>
         <div class="card-media">${mediaHtml(item, item.vendorSlug, false)}</div>
         <div class="card-body">
@@ -131,8 +148,7 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const card = btn.closest(".card");
-        const item = findItem(card.dataset.vendor, card.dataset.code);
-        if (item) removeFavorite(item);
+        toggleFavorite(card.dataset.vendor, card.dataset.code);
       });
     });
     grid.querySelectorAll(".cart-ctrl").forEach((ctrl) => {
@@ -163,6 +179,7 @@
 
   function openModal(item) {
     const stock = stockInfo(item);
+    const isFav = favorites.has(favKey(item.vendorSlug, item.code));
     modalContent.innerHTML = `
       <div><div class="modal-media">${mediaHtml(item, item.vendorSlug, true)}</div></div>
       <div>
@@ -184,7 +201,7 @@
           <div class="cart-ctrl" id="modalCartCtrl" style="width:150px; margin-top:0;">${cartCtrlHtml(item)}</div>
           ${item.link ? `<a class="btn-primary" href="${item.link}" target="_blank" rel="noopener">Open supplier link ↗</a>` : ""}
           <button class="btn-secondary" id="modalCopy">Copy SKU</button>
-          <button class="btn-secondary" id="modalFav">★ Remove from favorites</button>
+          <button class="btn-secondary" id="modalFav">${isFav ? "★ Favorited" : "☆ Add to favorites"}</button>
         </div>
       </div>
     `;
@@ -204,8 +221,8 @@
         .catch(() => showToast("Couldn't copy — select and copy the SKU manually"));
     });
     document.getElementById("modalFav").addEventListener("click", () => {
-      modalOverlay.classList.remove("open");
-      removeFavorite(item);
+      toggleFavorite(item.vendorSlug, item.code);
+      openModal(item);
     });
   }
   document.getElementById("modalClose").addEventListener("click", () => modalOverlay.classList.remove("open"));
@@ -225,7 +242,8 @@
   }
 
   searchInput.addEventListener("input", (e) => { state.q = e.target.value; render(); });
-  document.getElementById("inStockOnly").addEventListener("change", (e) => { state.inStockOnly = e.target.checked; render(); });
+  vendorFilter.addEventListener("change", (e) => { state.vendor = e.target.value; render(); });
+  document.getElementById("onHandOnly").addEventListener("change", (e) => { state.onHandOnly = e.target.checked; render(); });
   document.getElementById("sortSelect").addEventListener("change", (e) => { state.sort = e.target.value; render(); });
   document.getElementById("viewGrid").addEventListener("click", () => {
     state.view = "grid";
@@ -239,7 +257,13 @@
     document.getElementById("viewGrid").classList.remove("active");
     render();
   });
+  document.getElementById("clearFilters").addEventListener("click", () => {
+    state.q = ""; state.vendor = "all"; state.onHandOnly = false;
+    searchInput.value = ""; vendorFilter.value = "all"; document.getElementById("onHandOnly").checked = false;
+    render();
+  });
   document.getElementById("themeToggle").addEventListener("click", () => MastexTheme.toggle());
 
   render();
+  loadFavorites();
 })();

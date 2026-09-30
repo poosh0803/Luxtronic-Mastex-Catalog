@@ -11,7 +11,8 @@
  * Config comes from .env (see .env.example) — PORT here, SHEET_ID in
  * sync/sync-catalog.js. Note PM2 (ecosystem.config.js) sets its own PORT
  * for this process when run via `pm2 start`, which wins over .env's value —
- * keep the two in sync if you change one.
+ * keep the two in sync if you change one. ODOO_API_URL (also here) enables
+ * the optional Odoo stock badge — see lib/odoo-inventory.js.
  */
 
 const fs = require("fs");
@@ -21,6 +22,7 @@ const { spawn } = require("child_process");
 const express = require("express");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const { vendorTheme, initials } = require("./lib/vendor-theme");
+const { startInventoryRefresh, enrichWithInventory, getInventoryStatus } = require("./lib/odoo-inventory");
 
 const PORT = process.env.PORT || 8002;
 const ROOT = path.join(__dirname, "..");
@@ -187,9 +189,10 @@ app.get("/vendor/:slug", (req, res) => {
 
   res.render("vendor", {
     vendor: vendorMeta,
-    products,
+    products: enrichWithInventory(products),
     theme: vendorTheme(vendorMeta.name),
     initials: initials(vendorMeta.name),
+    inventoryStatus: getInventoryStatus(),
   });
 });
 
@@ -211,6 +214,7 @@ app.get("/favorites", (req, res) => {
   for (const slug of Object.keys(codesBySlug)) {
     const products = readVendorProducts(slug);
     if (!products) continue; // vendor no longer synced — skip its stale favorites rather than error
+    enrichWithInventory(products);
     const codes = codesBySlug[slug];
     products.filter((p) => codes.has(p.code)).forEach((p) => {
       items.push({ ...p, vendorSlug: slug, vendorName: vendorNameBySlug[slug] || slug });
@@ -218,7 +222,28 @@ app.get("/favorites", (req, res) => {
   }
   items.sort((a, b) => a.vendorName.localeCompare(b.vendorName) || a.name.localeCompare(b.name));
 
-  res.render("favorites", { items });
+  res.render("favorites", { items, inventoryStatus: getInventoryStatus() });
+});
+
+// Mastex products you already hold in your own Odoo inventory (matched by
+// EAN — see lib/odoo-inventory.js), across every vendor. Only matched
+// products are sent; whether zero-qty matches show is a client-side toggle.
+app.get("/stock", (req, res) => {
+  const meta = readMeta();
+  const items = [];
+  for (const v of meta.vendors) {
+    const products = readVendorProducts(v.slug);
+    if (!products) continue;
+    enrichWithInventory(products);
+    products.forEach((p) => {
+      if (p.odooQty === undefined) return;
+      items.push({ ...p, vendorSlug: v.slug, vendorName: v.name });
+    });
+  }
+  items.sort((a, b) => b.odooQty - a.odooQty || a.vendorName.localeCompare(b.vendorName) || a.name.localeCompare(b.name));
+  const vendors = meta.vendors.filter((v) => items.some((i) => i.vendorSlug === v.slug));
+
+  res.render("stock", { items, vendors, inventoryStatus: getInventoryStatus() });
 });
 
 app.get("/orders", (req, res) => {
@@ -315,6 +340,12 @@ app.get("/api/sync/status", (req, res) => {
   res.json(syncState);
 });
 
+app.get("/api/inventory/status", (req, res) => {
+  res.json(getInventoryStatus());
+});
+
 app.listen(PORT, () => {
   console.log(`Mastex catalog serving http://localhost:${PORT}`);
 });
+
+startInventoryRefresh();
