@@ -46,7 +46,7 @@ server/
                        GET /orders, GET /stock, plus GET /api/favorites[/:slug] + POST
                        /api/favorites/toggle, GET/POST /api/orders + PUT/DELETE
                        /api/orders/:id, POST /api/sync + GET /api/sync/status, GET
-                       /api/inventory/status
+                       /api/inventory/status + POST /api/inventory/refresh
   lib/vendor-theme.js  deterministic per-vendor accent color + initials + slugify
   lib/odoo-inventory.js your own on-hand Odoo stock (§3.23) — polls the separate
                        Luxtronic-Odoo-API project, matches by EAN, enriches
@@ -344,7 +344,10 @@ server-side instead, see §4.
       lengthened on request to keep Odoo traffic light — one read-only `search_read` per
       refresh, ~48/day). The whole response is ~325KB / ~1.4s — two orders of
       magnitude smaller than the Mastex sheet sync, so none of that machinery — child
-      process, disk persistence, manual "sync now" button — was needed or used here).
+      process, disk persistence, start-then-poll — was needed here. A manual **"Sync with
+      Odoo" button** was added later (§3.24) as a plain synchronous
+      `POST /api/inventory/refresh`; a refresh already in flight (timer or another click)
+      is shared rather than skipped, so a click never returns the old snapshot).
       `enrichWithInventory(products)` adds `odooQty`/`odooVirtualQty`/`odooName` directly
       onto each product object before `/vendor/:slug` and `/favorites` render, so the
       client-side JS (`catalog.js`/`favorites.js`) just reads `prod.odooQty` like any
@@ -388,6 +391,14 @@ server-side instead, see §4.
     - If `ODOO_API_URL` is unset, the page says so in a banner (it has nothing else to
       show); if Odoo is unreachable, the usual §3.23 warning banner applies and the empty
       state explains why there are no matches, rather than looking like a broken filter.
+    - **"Sync with Odoo" button** in the page's banner, plus "Last synced with Odoo: N min
+      ago" (formatted client-side from the server's ISO timestamp, so it's in the
+      viewer's local time). Pulls fresh stock immediately instead of waiting up to 30
+      minutes — e.g. right after receiving a delivery. `POST /api/inventory/refresh` waits
+      for the fetch (~0.4–1.5s) and returns 200, or 502 with Odoo's error (page shows it
+      in a toast and re-enables the button), or 400 if `ODOO_API_URL` isn't set (button
+      isn't rendered then anyway). Success reloads the page, since product data is
+      server-rendered into it.
 
 ## 4. Frontend Spec (current target state)
 

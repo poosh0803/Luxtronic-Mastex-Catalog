@@ -22,7 +22,7 @@ const { spawn } = require("child_process");
 const express = require("express");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const { vendorTheme, initials } = require("./lib/vendor-theme");
-const { startInventoryRefresh, enrichWithInventory, getInventoryStatus } = require("./lib/odoo-inventory");
+const { startInventoryRefresh, refreshInventory, enrichWithInventory, getInventoryStatus } = require("./lib/odoo-inventory");
 
 const PORT = process.env.PORT || 8002;
 const ROOT = path.join(__dirname, "..");
@@ -342,6 +342,20 @@ app.get("/api/sync/status", (req, res) => {
 
 app.get("/api/inventory/status", (req, res) => {
   res.json(getInventoryStatus());
+});
+
+// "Sync with Odoo" button: refresh now instead of waiting for the 30-minute
+// timer. Synchronous from the caller's view (~1.5s), unlike the Mastex sheet
+// sync's start-then-poll — small enough not to need it.
+app.post("/api/inventory/refresh", async (req, res) => {
+  if (!getInventoryStatus().enabled) {
+    return res.status(400).json({ ...getInventoryStatus(), error: "ODOO_API_URL is not set on the server" });
+  }
+  const before = getInventoryStatus().updatedAt;
+  await refreshInventory();
+  const status = getInventoryStatus();
+  const ok = !status.error && status.updatedAt !== before;
+  res.status(ok ? 200 : 502).json(status);
 });
 
 app.listen(PORT, () => {

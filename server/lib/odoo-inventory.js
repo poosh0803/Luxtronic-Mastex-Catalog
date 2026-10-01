@@ -26,12 +26,20 @@ const state = {
   byEan: {},
   updatedAt: null,
   error: null,
-  fetching: false,
 };
 
-async function refreshInventory() {
-  if (!ODOO_API_URL || state.fetching) return;
-  state.fetching = true;
+// A refresh already in progress (timer or "Sync with Odoo" click) is shared
+// rather than skipped, so a manual sync that lands mid-refresh still waits
+// for fresh data instead of returning immediately with the old snapshot.
+let inFlight = null;
+
+function refreshInventory() {
+  if (!ODOO_API_URL) return Promise.resolve();
+  if (!inFlight) inFlight = doRefresh().finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+async function doRefresh() {
   try {
     const res = await fetch(`${ODOO_API_URL}/inventory/products/all`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -51,8 +59,6 @@ async function refreshInventory() {
   } catch (err) {
     console.error("Failed to refresh Odoo inventory:", err.message);
     state.error = err.message; // keep the previous byEan/updatedAt — stale beats gone
-  } finally {
-    state.fetching = false;
   }
 }
 

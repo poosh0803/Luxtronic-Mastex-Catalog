@@ -264,6 +264,39 @@
   });
   document.getElementById("themeToggle").addEventListener("click", () => MastexTheme.toggle());
 
+  // ---------- "Sync with Odoo" ----------
+  // Stock is otherwise refreshed server-side every 30 minutes. Product data
+  // is server-rendered into the page, so a successful sync reloads it.
+  const syncedAtEl = document.getElementById("odooSyncedAt");
+  if (syncedAtEl) {
+    const t = new Date(syncedAtEl.dataset.iso);
+    const mins = Math.round((Date.now() - t.getTime()) / 60000);
+    const ago = mins < 1 ? "just now" : mins === 1 ? "1 min ago" : mins < 60 ? `${mins} min ago` : t.toLocaleString();
+    syncedAtEl.textContent = ` Last synced with Odoo: ${ago}.`;
+    syncedAtEl.title = t.toLocaleString();
+  }
+
+  const odooSyncBtn = document.getElementById("odooSyncBtn");
+  if (odooSyncBtn) {
+    odooSyncBtn.addEventListener("click", () => {
+      odooSyncBtn.disabled = true;
+      odooSyncBtn.textContent = "Syncing…";
+      fetch("/api/inventory/refresh", { method: "POST" })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+          showToast("Synced with Odoo — reloading…");
+          setTimeout(() => window.location.reload(), 400);
+        })
+        .catch((err) => {
+          console.error("Odoo sync failed", err);
+          showToast(`Odoo sync failed: ${err.message}`);
+          odooSyncBtn.disabled = false;
+          odooSyncBtn.textContent = "Sync with Odoo";
+        });
+    });
+  }
+
   render();
   loadFavorites();
 })();

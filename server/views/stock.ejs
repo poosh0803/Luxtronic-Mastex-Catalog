@@ -50,9 +50,17 @@
 </div>
 
 <div class="banner">
-  <div class="banner-inner">
-    <span>🏬</span>
-    <span>Mastex products you currently hold in your own Odoo inventory, matched by EAN — across every vendor. The 🏬 badge is your on-hand quantity; the green/red badge is Mastex's own stock.</span>
+  <div class="banner-inner" style="justify-content:space-between;">
+    <span style="display:flex; align-items:center; gap:8px;">
+      <span>🏬</span>
+      <span>
+        Mastex products you currently hold in your own Odoo inventory, matched by EAN — across every vendor. The 🏬 badge is your on-hand quantity; the green/red badge is Mastex's own stock.
+        <% if (inventoryStatus && inventoryStatus.updatedAt) { %><b id="odooSyncedAt" data-iso="<%= inventoryStatus.updatedAt %>"></b><% } %>
+      </span>
+    </span>
+    <% if (inventoryStatus && inventoryStatus.enabled) { %>
+      <button class="btn-secondary" id="odooSyncBtn" style="padding:6px 12px; font-size:12.5px; flex-shrink:0;">Sync with Odoo</button>
+    <% } %>
   </div>
 </div>
 <% if (!inventoryStatus || !inventoryStatus.enabled) { %>
