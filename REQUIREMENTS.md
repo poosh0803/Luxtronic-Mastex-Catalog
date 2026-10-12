@@ -338,6 +338,17 @@ server-side instead, see §4.
       attempted beyond what `sync-catalog.js` already does to the sheet's EAN column — a
       leading-zero mismatch between the two systems is a theoretical risk this wouldn't
       catch, but wasn't observed in the current data.
+    - **One exception to exact matching — mistyped EANs in Mastex's sheet.** Reported as
+      "my Keychron K2 HE Black isn't showing a quantity": the sheet has `4895848889199`
+      for K2H-F1, Odoo has the real `4895248889199` (one digit off; the sheet's fails its
+      EAN-13 check digit). `correctedEan()` in `odoo-inventory.js` handles this narrowly:
+      only when the sheet's EAN is 13 digits **and fails its own check digit** (so it's
+      known wrong, not merely absent from Odoo), and **exactly one** Odoo barcode with a
+      valid check digit is a single digit away. Zero or several candidates → no match,
+      since a wrong stock figure is worse than a missing one. Such a match sets
+      `odooCorrectedEan` and is shown with a "≈" on the badge plus an explanation in the
+      modal, so it never passes for an exact match. One product today (of 4 sheet EANs
+      with bad check digits). The real fix is still Mastex correcting their sheet.
     - **Server-side enrichment, not a client-side fetch**: `server/lib/odoo-inventory.js`
       keeps a small in-memory `EAN -> { qty, virtualQty, name }` cache, fetched once at
       server start and then on a **30-minute** `setInterval` (started at 5 minutes;

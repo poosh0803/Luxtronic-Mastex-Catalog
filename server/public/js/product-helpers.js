@@ -73,10 +73,16 @@
   function hasOdooStock(prod) {
     return prod.odooQty !== undefined && prod.odooQty !== null;
   }
+  // odooCorrectedEan is set when Mastex's sheet EAN was mistyped (fails its
+  // check digit) and the match was made to the one Odoo barcode a single
+  // digit away — marked with "≈" so it never passes for an exact match.
   function odooBadgeHtml(prod) {
     if (!hasOdooStock(prod)) return "";
     const cls = prod.odooQty > 0 ? "has-stock" : "no-stock";
-    return `<span class="badge odoo ${cls}" title="Your on-hand Odoo stock, matched by EAN">🏬 ${prod.odooQty}</span>`;
+    const title = prod.odooCorrectedEan
+      ? `Your on-hand Odoo stock. Mastex's EAN (${prod.ean}) looks mistyped — matched to Odoo barcode ${prod.odooCorrectedEan}`
+      : "Your on-hand Odoo stock, matched by EAN";
+    return `<span class="badge odoo ${cls}" title="${title}">🏬 ${prod.odooCorrectedEan ? "≈ " : ""}${prod.odooQty}</span>`;
   }
   function odooModalHtml(prod) {
     if (!hasOdooStock(prod)) return "";
@@ -84,8 +90,11 @@
     const forecastNote = prod.odooVirtualQty !== prod.odooQty
       ? ` <span class="modal-odoo-sub">(${prod.odooVirtualQty} forecast)</span>`
       : "";
+    const correctedNote = prod.odooCorrectedEan
+      ? ` <span class="modal-odoo-sub">≈ Mastex's EAN looks mistyped — matched to Odoo barcode ${prod.odooCorrectedEan} (${prod.odooName})</span>`
+      : "";
     return `<div class="modal-odoo-row">
-      <span class="badge odoo ${cls}">🏬 Your stock: ${prod.odooQty} on hand</span>${forecastNote}
+      <span class="badge odoo ${cls}">🏬 Your stock: ${prod.odooQty} on hand</span>${forecastNote}${correctedNote}
     </div>`;
   }
 

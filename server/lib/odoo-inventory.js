@@ -78,7 +78,15 @@ function startInventoryRefresh() {
 function enrichWithInventory(products) {
   if (!products || !Object.keys(state.byEan).length) return products;
   for (const p of products) {
-    const match = p.ean && state.byEan[p.ean];
+    if (!p.ean) continue;
+    let match = state.byEan[p.ean];
+    if (!match) {
+      const corrected = correctedEan(p.ean);
+      if (corrected) {
+        match = state.byEan[corrected];
+        p.odooCorrectedEan = corrected;
+      }
+    }
     if (match) {
       p.odooQty = match.qty;
       p.odooVirtualQty = match.virtualQty;
@@ -86,6 +94,35 @@ function enrichWithInventory(products) {
     }
   }
   return products;
+}
+
+function ean13Valid(e) {
+  if (!/^\d{13}$/.test(e)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(e[i]) * (i % 2 ? 3 : 1);
+  return (10 - (sum % 10)) % 10 === Number(e[12]);
+}
+
+// Mastex's sheet occasionally has a mistyped EAN (e.g. Keychron K2H-F1:
+// 4895848889199 in the sheet vs the real 4895248889199). Only when the
+// sheet's EAN is 13 digits AND fails its own check digit — so it is known
+// to be wrong — look for an Odoo barcode exactly one digit away that does
+// pass. Exactly one such candidate is required; zero or several means no
+// match, since a wrong stock figure is worse than a missing one.
+function correctedEan(ean) {
+  if (!/^\d{13}$/.test(ean) || ean13Valid(ean)) return null;
+  let found = null;
+  for (let i = 0; i < 13; i++) {
+    for (let d = 0; d <= 9; d++) {
+      if (String(d) === ean[i]) continue;
+      const candidate = ean.slice(0, i) + d + ean.slice(i + 1);
+      if (state.byEan[candidate] && ean13Valid(candidate)) {
+        if (found && found !== candidate) return null;
+        found = candidate;
+      }
+    }
+  }
+  return found;
 }
 
 function getInventoryStatus() {
