@@ -1,0 +1,32 @@
+<%# Shared two-row header (brand row + nav bar) per LUXTRONIC-DESIGN-GUIDELINES §3.
+    Locals: mark, title, tagline, search (placeholder string or ""), kbd (bool). %>
+<div class="header">
+  <div class="brand">
+    <% if (typeof wordmark !== 'undefined' && wordmark) { %>
+    <div class="logo-img wordmark"><img src="/brand/mastex-logo.png" alt="Mastex"></div>
+    <% } else { %>
+    <div class="logo-img<%= typeof logo !== 'undefined' && logo ? ' has-logo' : '' %>"><% if (typeof logo !== 'undefined' && logo) { %><img src="<%= logo %>" alt=""><% } else { %><%= mark %><% } %></div>
+    <% } %>
+    <span class="brand-name"><%= title %></span>
+    <span class="tagline"><%= tagline %></span>
+  </div>
+  <% if (typeof back === 'undefined' || back) { %>
+  <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> All vendors</a>
+  <% } %>
+  <% if (search) { %>
+  <div class="search-wrap">
+    <i class="fas fa-magnifying-glass"></i>
+    <input id="searchInput" type="text" placeholder="<%= search %>" autocomplete="off">
+    <% if (kbd) { %><span class="kbd-hint">/</span><% } %>
+  </div>
+  <% } %>
+  <button class="theme-toggle" id="themeToggle" title="Toggle theme"><i class="fas fa-moon" id="themeIcon"></i></button>
+</div>
+<nav class="nav-bar">
+  <a class="nav-item" href="/" title="All vendors"><i class="fas fa-store"></i> Vendors</a>
+  <a class="nav-item" href="/search" title="Search every product in the Mastex catalog"><i class="fas fa-magnifying-glass"></i> Search Catalog</a>
+  <a class="nav-item" href="/stock" title="Mastex products on hand in your Odoo"><i class="fas fa-boxes-stacked"></i> Stock on Hand</a>
+  <a class="nav-item" href="/favorites" title="All favourites"><i class="fas fa-star"></i> Favourites<span class="cart-badge" id="favoritesBadge">0</span></a>
+  <a class="nav-item" href="/cart" title="Order list"><i class="fas fa-cart-shopping"></i> Order List<span class="cart-badge" id="cartBadge">0</span></a>
+  <a class="nav-item" href="/orders" title="Order history"><i class="fas fa-clock-rotate-left"></i> History</a>
+</nav>

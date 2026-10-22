@@ -82,7 +82,18 @@ app.set("views", path.join(__dirname, "views"));
 app.use(express.json());
 app.use("/css", express.static(path.join(__dirname, "public", "css")));
 app.use("/js", express.static(path.join(__dirname, "public", "js")));
+app.use("/brand", express.static(path.join(__dirname, "public", "brand")));
 app.use("/images", express.static(IMAGES_DIR));
+const LOGO_DIR = path.join(__dirname, "public", "vendor_logo");
+app.use("/vendor_logo", express.static(LOGO_DIR));
+
+/** Public URL of a vendor's logo (server/public/vendor_logo/<slug>.<ext>), or null → UI falls back to initials. */
+function logoFor(slug) {
+  try {
+    const f = fs.readdirSync(LOGO_DIR).find((n) => n.slice(0, n.lastIndexOf(".")) === slug);
+    return f ? "/vendor_logo/" + encodeURIComponent(f) : null;
+  } catch (e) { return null; }
+}
 
 function readMeta() {
   const metaPath = path.join(DATA_DIR, "meta.json");
@@ -168,6 +179,7 @@ app.get("/", (req, res) => {
     ...v,
     theme: vendorTheme(v.name),
     initials: initials(v.name),
+    logo: logoFor(v.slug),
   }));
   res.render("hub", { vendors, syncedAt: meta.syncedAt, errors: meta.errors });
 });
@@ -192,6 +204,7 @@ app.get("/vendor/:slug", (req, res) => {
     products: enrichWithInventory(products),
     theme: vendorTheme(vendorMeta.name),
     initials: initials(vendorMeta.name),
+    logo: logoFor(vendorMeta.slug),
     inventoryStatus: getInventoryStatus(),
   });
 });
@@ -244,6 +257,21 @@ app.get("/stock", (req, res) => {
   const vendors = meta.vendors.filter((v) => items.some((i) => i.vendorSlug === v.slug));
 
   res.render("stock", { items, vendors, inventoryStatus: getInventoryStatus() });
+});
+
+// Every product from every synced vendor, for global search. Unlike /stock
+// (only products you hold in Odoo) and /favorites (starred only) this is the
+// whole supplier catalog; the client only renders results once you search.
+app.get("/search", (req, res) => {
+  const meta = readMeta();
+  const items = [];
+  for (const v of meta.vendors) {
+    const products = readVendorProducts(v.slug);
+    if (!products) continue;
+    enrichWithInventory(products);
+    products.forEach((p) => items.push({ ...p, vendorSlug: v.slug, vendorName: v.name }));
+  }
+  res.render("search", { items, vendors: meta.vendors, inventoryStatus: getInventoryStatus() });
 });
 
 app.get("/orders", (req, res) => {

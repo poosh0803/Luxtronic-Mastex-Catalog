@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Search Catalog — Mastex Catalog</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link rel="stylesheet" href="/css/site.css">
+<script src="/js/theme.js"></script>
+</head>
+<body>
+
+<%- include("partials/header", {mark:"MX", wordmark:true, title:"Search Catalog", tagline:"Every Mastex product, all vendors", search:"Search all products by name, SKU, code, EAN or vendor…", kbd:true}) %>
+
+<div class="banner">
+  <div class="banner-inner">
+    <span>🔎</span>
+    <span>Search the full Mastex catalog (<%= items.length %> products across <%= vendors.length %> vendors). To see only what you already hold, use <a href="/stock" style="color:var(--accent-ink); font-weight:600;">Stock on Hand</a>.</span>
+  </div>
+</div>
+<% if (inventoryStatus && inventoryStatus.enabled && (inventoryStatus.error || !inventoryStatus.updatedAt)) { %>
+<div class="banner">
+  <div class="banner-inner" style="background:var(--warn-bg); border-color:color-mix(in srgb, var(--warn) 35%, var(--border));">
+    <span>🏬</span>
+    <span>
+      <% if (!inventoryStatus.updatedAt) { %>Odoo stock badges aren't showing yet — still waiting on the first successful fetch from the Odoo API.<% } else { %>Odoo stock badges may be stale — the last refresh failed (<%= inventoryStatus.error %>). Showing the last known values.<% } %>
+    </span>
+  </div>
+</div>
+<% } %>
+
+<div class="filterbar">
+  <div class="filter-controls">
+    <label class="stock-toggle">
+      <input type="checkbox" id="inStockOnly">
+      <span class="switch"></span>
+      In stock only
+    </label>
+    <select id="vendorSelect">
+      <option value="">All vendors</option>
+      <% vendors.forEach(function(vd) { %><option value="<%= vd.slug %>"><%= vd.name %></option><% }); %>
+    </select>
+    <select id="sortSelect">
+      <option value="relevance">Sort: Relevance</option>
+      <option value="vendor">Vendor A–Z</option>
+      <option value="name-asc">Name A–Z</option>
+      <option value="price-asc">Price: Low to High</option>
+      <option value="price-desc">Price: High to Low</option>
+      <option value="stock-desc">Stock: High to Low</option>
+    </select>
+    <div class="view-toggle">
+      <button id="viewGrid" class="active" title="Grid view">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      </button>
+      <button id="viewList" title="List view">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="meta-row">
+  <span id="resultCount">Type to search the catalog</span>
+  <span></span>
+</div>
+
+<div class="catalog">
+  <div class="grid" id="grid"></div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <h3 id="emptyStateTitle">Search the catalog</h3>
+    <p id="emptyStateBody"></p>
+    <button id="emptyStateAction" style="display:none;">Clear search</button>
+  </div>
+  <div style="text-align:center; margin-top:18px;"><button class="btn-secondary" id="showMore" style="display:none;">Show more results</button></div>
+</div>
+
+<footer>
+  <span id="footerSummary"><%= items.length %> products across <%= vendors.length %> vendors</span>
+  <span><a href="/">Back to all vendors</a></span>
+</footer>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-top"><button class="modal-close" id="modalClose">✕</button></div>
+    <div class="modal-content" id="modalContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/cart.js"></script>
+<script src="/js/favorites-badge.js"></script>
+<script src="/js/product-helpers.js"></script>
+<script>
+  window.__SEARCH_ITEMS__ = <%- JSON.stringify(items) %>;
+</script>
+<script src="/js/search.js"></script>
+</body>
+</html>
