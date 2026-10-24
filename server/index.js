@@ -30,6 +30,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const IMAGES_DIR = path.join(DATA_DIR, "images");
 const FAVORITES_PATH = path.join(DATA_DIR, "favorites.json");
 const ORDERS_PATH = path.join(DATA_DIR, "orders.json");
+const CART_PATH = path.join(DATA_DIR, "cart.json");
 const SYNC_SCRIPT = path.join(ROOT, "sync", "sync-catalog.js");
 
 // Manual "sync now" support: runs sync/sync-catalog.js as a child process
@@ -79,7 +80,7 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use("/css", express.static(path.join(__dirname, "public", "css")));
 app.use("/js", express.static(path.join(__dirname, "public", "js")));
 app.use("/brand", express.static(path.join(__dirname, "public", "brand")));
@@ -307,6 +308,36 @@ app.post("/api/favorites/toggle", (req, res) => {
   }
   writeFavorites(list);
   res.json({ favorited });
+});
+
+// The in-progress order list ("cart"): one shared cart for everyone using the
+// catalog, so the same list shows on any PC. Last write wins. updatedAt is null
+// until the first save, which lets a browser tell "server cart is empty" apart
+// from "server cart was never used" when migrating its old localStorage cart.
+function readCart() {
+  if (!fs.existsSync(CART_PATH)) return { cart: {}, updatedAt: null };
+  try {
+    return JSON.parse(fs.readFileSync(CART_PATH, "utf8"));
+  } catch (err) {
+    console.error("Failed to parse data/cart.json:", err.message);
+    return { cart: {}, updatedAt: null };
+  }
+}
+
+app.get("/api/cart", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(readCart());
+});
+
+app.put("/api/cart", (req, res) => {
+  const cart = req.body && req.body.cart;
+  if (!cart || typeof cart !== "object" || Array.isArray(cart)) {
+    return res.status(400).json({ error: "cart must be an object" });
+  }
+  const saved = { cart, updatedAt: new Date().toISOString() };
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(CART_PATH, JSON.stringify(saved, null, 2));
+  res.json({ updatedAt: saved.updatedAt });
 });
 
 app.get("/api/orders", (req, res) => {

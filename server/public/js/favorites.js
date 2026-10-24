@@ -241,5 +241,6 @@
   });
   document.getElementById("themeToggle").addEventListener("click", () => MastexTheme.toggle());
 
+  window.addEventListener("cart:remote", () => render());
   render();
 })();

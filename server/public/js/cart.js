@@ -1,8 +1,11 @@
 /* ============================================================
    Shared "order list" cart, used across every vendor page plus
-   the /cart page. Persisted in localStorage so items added on one
-   vendor page are still there when you visit another vendor or
-   the cart page.
+   the /cart page. The source of truth is the server (data/cart.json
+   via /api/cart) so the same cart shows on any PC. localStorage is
+   only a local cache, so every read stays synchronous and pages
+   render instantly; changes are pushed to the server (debounced) and
+   the server copy is pulled on load, on tab focus and every few
+   seconds. Last write wins if two PCs edit at the same moment.
    ============================================================ */
 (function (window) {
   const CART_KEY = "mastexCart_v1";
@@ -15,6 +18,59 @@
     localStorage.setItem(CART_KEY, JSON.stringify(cart));
     updateBadge();
     window.dispatchEvent(new CustomEvent("cart:change"));
+    schedulePush();
+  }
+
+  // ---- server sync ----
+  const SYNCED_KEY = "mastexCartSynced_v1";
+  const POLL_MS = 8000;
+  let pushTimer = null;
+  let pushPending = false; // local edits not yet confirmed by the server
+  let pushing = false;
+
+  function schedulePush() {
+    pushPending = true;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(push, 250);
+  }
+  function push() {
+    clearTimeout(pushTimer);
+    if (pushing) { schedulePush(); return Promise.resolve(); }
+    pushing = true;
+    const body = JSON.stringify({ cart: load() });
+    return fetch("/api/cart", { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive: body.length < 60000 })
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); pushPending = false; })
+      .catch((err) => { console.error("Failed to save cart to server", err); pushTimer = setTimeout(push, 5000); })
+      .finally(() => { pushing = false; });
+  }
+  function applyRemote(cart) {
+    localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    updateBadge();
+    window.dispatchEvent(new CustomEvent("cart:change"));
+    window.dispatchEvent(new CustomEvent("cart:remote"));
+  }
+  function pull() {
+    if (pushPending || pushing) return Promise.resolve();
+    return fetch("/api/cart", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((remote) => {
+        if (pushPending || pushing) return; // a local edit happened meanwhile; it wins
+        const local = load();
+        const firstSync = !localStorage.getItem(SYNCED_KEY);
+        if (firstSync) {
+          // First time this browser talks to the server: fold in whatever
+          // it had saved locally before carts moved to the server.
+          localStorage.setItem(SYNCED_KEY, "1");
+          const remoteCart = remote.cart || {};
+          const merged = { ...local, ...remoteCart };
+          const mergedJson = JSON.stringify(merged);
+          if (mergedJson !== JSON.stringify(local)) applyRemote(merged);
+          if (mergedJson !== JSON.stringify(remoteCart)) schedulePush();
+          return;
+        }
+        if (JSON.stringify(remote.cart || {}) !== JSON.stringify(local)) applyRemote(remote.cart || {});
+      })
+      .catch((err) => console.error("Failed to load cart from server", err));
   }
   function keyOf(vendorSlug, code) { return vendorSlug + "::" + code; }
 
@@ -62,6 +118,7 @@
     localStorage.removeItem(CART_KEY);
     updateBadge();
     window.dispatchEvent(new CustomEvent("cart:change"));
+    schedulePush();
   }
   function all() {
     // Defensive: silently drop any entry that doesn't match the current
@@ -92,5 +149,9 @@
   }
 
   window.MastexCart = { getQty, setQty, add, removeItem, setDemo, clear, all, lineTotal, totalCount, totalValue, updateBadge };
-  document.addEventListener("DOMContentLoaded", updateBadge);
+  document.addEventListener("DOMContentLoaded", () => { updateBadge(); pull(); });
+  setInterval(() => { if (!document.hidden) pull(); }, POLL_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pull(); });
+  window.addEventListener("focus", pull);
+  window.addEventListener("pagehide", () => { if (pushPending) push(); });
 })(window);

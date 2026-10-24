@@ -297,6 +297,7 @@
     });
   }
 
+  window.addEventListener("cart:remote", () => render());
   render();
   loadFavorites();
 })();
